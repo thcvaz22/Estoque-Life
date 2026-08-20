@@ -1,0 +1,10 @@
+Life Sucos v17.1 — correção dos arquivos de telas que ainda estavam antigos no GitHub.
+
+Substitua SOMENTE estes 5 arquivos dentro de public/js/views/:
+- commercial-v10.js
+- commercial.js
+- entries.js
+- exits.js
+- products.js
+
+Não crie uma pasta nova no repositório. Abra public/js/views no GitHub e envie os 5 arquivos, confirmando a substituição dos existentes.
