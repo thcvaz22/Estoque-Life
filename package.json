@@ -1,0 +1,28 @@
+{
+  "name": "life-sucos-sistema",
+  "version": "16.2.0",
+  "description": "Ecossistema Life Sucos — PostgreSQL Neon, AION Online e AION Official Skill v1.1 com benchmarking e análise empresarial avançada.",
+  "private": true,
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node scripts/run-tests.js",
+    "remote:setup": "node scripts/remote-setup.js",
+    "remote:disable": "node scripts/remote-disable.js",
+    "ocr:prepare": "node scripts/prepare-ocr.js",
+    "backup:db": "node scripts/backup-database.js",
+    "neon:test": "node scripts/test-neon.js",
+    "neon:migrate": "node scripts/migrate-sqlite-to-neon.js"
+  },
+  "engines": {
+    "node": ">=22 <27"
+  },
+  "dependencies": {
+    "better-sqlite3": "12.11.1",
+    "express": "^4.21.0",
+    "selfsigned": "^2.4.1",
+    "tesseract.js": "^5.1.1",
+    "pg": "^8.13.1"
+  }
+}

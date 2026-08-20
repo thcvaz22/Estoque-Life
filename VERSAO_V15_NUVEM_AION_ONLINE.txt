@@ -1,0 +1,7 @@
+Life Sucos | AION
+Versão: 15.0.0-nuvem-aion-online
+Local HTTP: 3800
+Local HTTPS: 4243
+Cloud: Render Web Service + persistent disk /var/data
+AION Online: OpenAI Responses API + web search quando OPENAI_API_KEY estiver configurada
+Migração: backup JSON v6 inclui usuários (hashes) para preservar logins, sem sessões.

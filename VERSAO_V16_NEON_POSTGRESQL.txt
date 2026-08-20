@@ -1,0 +1,10 @@
+Life Sucos v16 — Migração PostgreSQL Neon
+
+Esta versão inicia a transição segura do SQLite para PostgreSQL Neon.
+- Schema do Neon validado em branch temporária.
+- Conector PostgreSQL adicionado ao backend.
+- Teste de conexão Neon adicionado.
+- Migrador SQLite -> Neon adicionado.
+- render.yaml preparado para DATABASE_URL do Neon.
+
+IMPORTANTE: nesta etapa o backend operacional ainda não deve ser colocado em produção usando PostgreSQL até a refatoração assíncrona das rotas críticas ser concluída e validada.

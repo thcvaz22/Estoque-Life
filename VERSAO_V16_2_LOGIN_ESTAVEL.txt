@@ -1,0 +1,15 @@
+LIFE SUCOS v16.2.0-login-estavel-aion-1.1
+
+Correção prioritária de autenticação para implantação.
+
+Acesso local inicial:
+- Gerente: admin / adminlife2026
+- Operador: operador / life2026
+
+Na nuvem, as credenciais continuam sendo definidas por variáveis de ambiente e não usam senhas fixas.
+
+Inclui recuperação automática para bancos locais recém-criados por v15/v16.0/v16.1 que receberam senha aleatória, além do atalho recuperar-login.bat.
+
+Portas locais:
+- HTTP 4000
+- HTTPS 4443

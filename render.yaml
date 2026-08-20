@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: life-sucos-aion
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.19.0
+      - key: CLOUD_MODE
+        value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: NEON_POOL_MAX
+        value: "10"
+      - key: FISCAL_PROVIDER
+        value: manual
+      - key: AION_EXTERNAL_AI_ENABLED
+        value: "true"
+      - key: AION_WEB_SEARCH_ENABLED
+        value: "true"
+      - key: AION_MODEL
+        value: gpt-5-mini
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: BOOTSTRAP_ADMIN_USERNAME
+        value: admin
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false

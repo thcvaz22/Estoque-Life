@@ -1,0 +1,14 @@
+node_modules/
+data/
+.env
+.env.*
+!.env.cloud.example
+*.sqlite
+*.sqlite3
+*.db
+*.key
+npm-debug.log
+*.log
+.DS_Store
+*.bak
+PRIMEIRO_ACESSO_ADMIN.txt
