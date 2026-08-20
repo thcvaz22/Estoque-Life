@@ -1,40 +1,42 @@
-# Life Sucos v17 — Deploy no Render Free + Neon
+# Life Sucos v17.2 — Deploy no Render Free + Neon
 
 ## Arquitetura
 
 - Render Web Service: plano Free, sem disco persistente.
-- Neon PostgreSQL: persistência autoritativa da operação.
-- SQLite na instância: cache transacional efêmero, reconstruído do Neon a cada boot.
-- AION Online: OpenAI Responses API + web search quando `OPENAI_API_KEY` estiver configurada.
+- Neon PostgreSQL: persistência durável/autoritativa.
+- SQLite da instância: cache transacional efêmero, reconstruído do Neon no boot.
+- AION Online: opcional, via chave de API configurada apenas no Render.
 
-## Antes do deploy
+## Deploy
 
-1. O schema base v16 deve existir no Neon.
-2. A migration v17 deve criar a tabela `attachments` para fotos, XML e PDF.
-3. Para levar dados reais do PC atual, execute a migração SQLite → Neon antes de trocar a operação para a URL pública.
-4. Preserve a pasta/banco local como contingência até a homologação final.
+Conecte o Blueprint ao repositório `thcvaz22/Estoque-Life`, branch `main`. O `render.yaml` permanece sem disco e com `plan: free`.
 
-## Render Blueprint
+Segredos importantes no Render:
 
-No Render: **New → Blueprint** e conecte o repositório `thcvaz22/Estoque-Life`, branch `main`.
-O arquivo `render.yaml` usa `plan: free` e não cria disco.
+- `DATABASE_URL` — conexão do Neon.
+- `BOOTSTRAP_ADMIN_PASSWORD` — senha inicial quando aplicável.
+- `OPENAI_API_KEY` — opcional para AION Online.
+- `AUTH_SIGNING_SECRET` — gerado pelo Render.
 
-Segredos solicitados no primeiro Blueprint:
+Não coloque segredos no GitHub.
 
-- `DATABASE_URL`: connection string do Neon.
-- `OPENAI_API_KEY`: chave OpenAI do backend (pode ser ativada na etapa da AION Online).
-- `BOOTSTRAP_ADMIN_PASSWORD`: senha de primeiro acesso se o Neon ainda não tiver usuários.
-
-`AUTH_SIGNING_SECRET` é gerado automaticamente pelo Render e não deve ser commitado.
-
-## Validação mínima
+## Validação da v17.2
 
 Após o deploy, abra `/api/health` e confirme:
 
 - `ok: true`
-- `systemVersion: 17.0.0-neon-primary-render-free-aion-1.1`
+- `systemVersion: 17.2.0-neon-primary-render-free-recebimento-fiscal-aion-1.1`
 - `storage: neon-primary+ephemeral-sqlite-cache`
-- `cloudPersistence.enabled: true`
-- `cloudPersistence.lastFlushAt` preenchido
+- persistência cloud habilitada e sem erro de flush.
 
-Depois valide login, produtos, estoque, entradas, pedidos, romaneio, saídas, clientes, NF, anexos e Life Vendas.
+Depois valide: login, fornecedores, entrada com 2 imagens, geração do romaneio PDF, entrada no estoque, avaria, rascunho de devolução, cancelamento do rascunho e vínculo manual de NF-e autorizada.
+
+## Fiscal
+
+A v17.2 deve ficar com `FISCAL_PROVIDER=manual` até a integração fiscal ser homologada. O módulo de devoluções prepara os dados e permite registrar a NF-e autorizada, mas **não transmite para SEFAZ** nesta versão.
+
+Para ativar emissão automática, a próxima etapa deve configurar um provedor fiscal real, certificado A1, ambiente de homologação e regras fiscais validadas pela contabilidade.
+
+## Atalho Windows
+
+O `iniciar-app.bat` abre a URL online. `iniciar.bat` permanece como modo local explícito/contingência.

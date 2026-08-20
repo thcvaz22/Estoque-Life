@@ -1,0 +1,14 @@
+LIFE SUCOS | AION — v17.2.0
+
+Recebimento + fornecedores + devoluções + preparação fiscal.
+
+- NF por XML ou múltiplas imagens/páginas.
+- Romaneio de conferência A4 com recebedor, fornecedor, itens, conversões logísticas, conferência manual, total, devoluções, observações e assinaturas.
+- Cadastro de fornecedores reutilizável.
+- Dados do depósito/emitente nas Configurações.
+- Devoluções vinculadas às avarias sem segunda baixa de estoque.
+- Rascunho de devolução vinculado à NF de origem e posterior registro do XML/DANFE autorizado.
+- Emissão automática SEFAZ permanece desativada até configuração/homologação de provedor fiscal e certificado A1.
+- Atalho Windows cloud-first.
+- Relatórios agora possuem histórico unificado de romaneios de entrada e saída, com reemissão/visualização em PDF.
+- Neon permanece como persistência autoritativa no modo cloud.

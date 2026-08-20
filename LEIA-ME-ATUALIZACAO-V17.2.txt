@@ -1,0 +1,13 @@
+LIFE SUCOS | AION — v17.2.0
+
+Inclui:
+- Recebimento com múltiplas imagens/páginas da NF
+- Romaneio de conferência de entrada
+- Cadastro de fornecedores
+- Devoluções ligadas às avarias
+- Preparação fiscal
+- Atalho Windows cloud-first
+- Relatórios > Romaneios para reemitir romaneios de entrada e saída
+
+Ao atualizar o GitHub, mantenha exatamente a mesma estrutura de pastas.
+Não apague o banco local nem dados do Neon.
