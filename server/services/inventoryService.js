@@ -143,7 +143,7 @@ function consumeFEFO(productId, quantidade) {
 /* ============================================================
    1. ENTRADA
    ============================================================ */
-function createEntry({ operationId, fornecedor, nf, chaveNFe, data, itens, origemXML, origemFoto, fotos, usuario }) {
+function createEntry({ operationId, fornecedor, fornecedorId, cnpjFornecedor, nf, serie, chaveNFe, data, valorTotalMercadorias, itens, origemXML, origemFoto, fotos, usuario }) {
   return withIdempotency(operationId, () => {
     if (!fornecedor) throw httpError(400, 'Informe o fornecedor.');
     if (!Array.isArray(itens) || itens.length === 0) throw httpError(400, 'Adicione ao menos um item.');
@@ -192,9 +192,10 @@ function createEntry({ operationId, fornecedor, nf, chaveNFe, data, itens, orige
           motivo: origemXML ? 'Entrada via importação de XML de NF-e' : (origemFoto ? 'Entrada via foto da NF (OCR)' : 'Entrada manual de mercadoria'),
           observacoes: `Fornecedor: ${fornecedor} · Chegada: ${dataChegada} · ${quantidadeInformada} ${unidadeMovimentacao} = ${quantidadeUnidades} unidade(s) · Validade: ${validade}`
         });
-        savedItems.push({ produtoId: it.produtoId, produtoNome: product.nome, quantidade: quantidadeUnidades, quantidadeInformada, unidadeMovimentacao, lote, validade, custoUnitario: Number.isFinite(Number(it.custoUnitario)) ? Number(it.custoUnitario) : Number(product.custoAtual || 0), embalagem: unidadeMovimentacao });
+        savedItems.push({ produtoId: it.produtoId, produtoNome: product.nome, quantidade: quantidadeUnidades, quantidadeInformada, unidadeMovimentacao, lote, validade, custoUnitario: Number.isFinite(Number(it.custoUnitario)) ? Number(it.custoUnitario) : Number(product.custoAtual || 0), valorTotalItem: Number.isFinite(Number(it.valorTotalItem)) && Number(it.valorTotalItem) > 0 ? Number(it.valorTotalItem) : quantidadeInformada * (Number.isFinite(Number(it.custoUnitario)) ? Number(it.custoUnitario) : Number(product.custoAtual || 0)), fiscal: it.fiscal && typeof it.fiscal === 'object' ? it.fiscal : null, embalagem: unidadeMovimentacao });
       }
-      const entry = { id: uid('entry'), data: dataChegada, dataChegada, fornecedor, nf: nf || null, chaveNFe: chaveNFe || null, itens: savedItems, origemXML: !!origemXML, origemFoto: !!origemFoto, fotos: Array.isArray(fotos) ? fotos : [], responsavel: usuario, criadoEm: nowUTCISOString() };
+      const calculatedTotal = savedItems.reduce((sum, it) => sum + Number(it.valorTotalItem || 0), 0);
+      const entry = { id: uid('entry'), data: dataChegada, dataChegada, fornecedor, fornecedorId: fornecedorId || null, cnpjFornecedor: cnpjFornecedor || null, nf: nf || null, serie: serie || null, chaveNFe: chaveNFe || null, valorTotalMercadorias: Number(valorTotalMercadorias || 0) > 0 ? Number(valorTotalMercadorias) : calculatedTotal, itens: savedItems, origemXML: !!origemXML, origemFoto: !!origemFoto, fotos: Array.isArray(fotos) ? fotos : [], responsavel: usuario, criadoEm: nowUTCISOString() };
       saveDoc('entries', entry.id, entry);
       return entry;
     });
