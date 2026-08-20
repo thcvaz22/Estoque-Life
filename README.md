@@ -1,4 +1,4 @@
-# Life Sucos | AION — v16.3
+# Life Sucos | AION — v17
 
 Ecossistema de operação, estoque, vendas remotas, notas fiscais, relatórios e Sistema de Inteligência AION.
 
@@ -126,3 +126,14 @@ A instalação local volta a aceitar `admin / adminlife2026` e `operador / life2
 Antes do primeiro deploy em produção, a arquitetura foi endurecida para evitar perda de dados: o backend operacional ainda usa SQLite síncrono e transacional, portanto em nuvem ele **exige** um disco persistente em `/var/data`. O `render.yaml` já declara esse disco. Se alguém tentar iniciar o sistema em modo nuvem sem `LIFESUCOS_DATA_DIR`, o servidor falha de propósito em vez de gravar em filesystem efêmero.
 
 O Neon fica ativo nesta versão como **espelho assíncrono de segurança**, atualizado automaticamente em intervalos de 5 minutos quando `DATABASE_URL` estiver configurada. Isso permite validar Neon em produção sem trocar, às pressas, a camada transacional de estoque/FEFO/reservas. O corte definitivo para PostgreSQL como banco operacional principal será feito na v17 após a implantação estar estável.
+
+
+## v17 — Render Free + Neon Primary
+
+A v17 remove a dependência de disco persistente pago no Render. Em nuvem, o Neon PostgreSQL é a fonte persistente/autoritativa. A instância Node mantém um SQLite efêmero apenas como cache transacional para preservar as regras síncronas já validadas de FEFO, estoque e idempotência.
+
+No boot, o estado é restaurado Neon → cache. Em cada operação de escrita, a resposta de sucesso só é enviada depois de o estado resultante ser confirmado no Neon. Exclusões também são sincronizadas. Fotos de NF/romaneio, XML e PDF são persistidos na tabela `attachments` do Neon.
+
+O `render.yaml` usa `plan: free`, não cria disco e gera `AUTH_SIGNING_SECRET` automaticamente. Os segredos `DATABASE_URL`, `OPENAI_API_KEY` e `BOOTSTRAP_ADMIN_PASSWORD` continuam fora do GitHub.
+
+O modo local continua funcionando com SQLite persistente na pasta `data/` como contingência.

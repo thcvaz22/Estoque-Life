@@ -1,0 +1,16 @@
+LIFE SUCOS | AION — v17.0.0
+
+Arquitetura cloud:
+- Render Web Service Free
+- Neon PostgreSQL como persistência autoritativa
+- SQLite efêmero apenas como cache transacional da instância
+- restauração Neon -> cache antes do servidor aceitar tráfego
+- confirmação Neon antes de responder sucesso em escritas
+- exclusões sincronizadas
+- anexos (fotos/XML/PDF) persistidos no Neon
+- AION Official Skill v1.1 preservada
+
+Modo local:
+- SQLite persistente mantido como contingência
+
+Não apagar bancos/backup existentes durante a implantação.

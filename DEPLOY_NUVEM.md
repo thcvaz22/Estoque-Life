@@ -1,34 +1,40 @@
-# Life Sucos v16.3 — Deploy seguro no Render
+# Life Sucos v17 — Deploy no Render Free + Neon
 
-## Arquitetura de implantação
+## Arquitetura
 
-Para a implantação de produção, a v16.3 mantém a camada operacional que já foi validada no SQLite síncrono e transacional. No Render, o SQLite fica obrigatoriamente no disco persistente `/var/data`. O Neon recebe um espelho assíncrono do estado do sistema em intervalos de 5 minutos.
+- Render Web Service: plano Free, sem disco persistente.
+- Neon PostgreSQL: persistência autoritativa da operação.
+- SQLite na instância: cache transacional efêmero, reconstruído do Neon a cada boot.
+- AION Online: OpenAI Responses API + web search quando `OPENAI_API_KEY` estiver configurada.
 
-Isso evita uma troca apressada da lógica crítica de estoque/FEFO/reservas antes da implantação. O corte definitivo para PostgreSQL Neon como banco operacional principal será realizado na v17.
+## Antes do deploy
+
+1. O schema base v16 deve existir no Neon.
+2. A migration v17 deve criar a tabela `attachments` para fotos, XML e PDF.
+3. Para levar dados reais do PC atual, execute a migração SQLite → Neon antes de trocar a operação para a URL pública.
+4. Preserve a pasta/banco local como contingência até a homologação final.
 
 ## Render Blueprint
 
-O repositório precisa conter `render.yaml` na raiz. No Render:
+No Render: **New → Blueprint** e conecte o repositório `thcvaz22/Estoque-Life`, branch `main`.
+O arquivo `render.yaml` usa `plan: free` e não cria disco.
 
-1. New → Blueprint.
-2. Conecte o GitHub e escolha `thcvaz22/Estoque-Life`.
-3. Branch: `main`.
-4. Blueprint path: `render.yaml`.
-5. Preencha os segredos solicitados no painel:
-   - `DATABASE_URL` — string de conexão pooled do Neon.
-   - `OPENAI_API_KEY` — chave da OpenAI, criada na plataforma e mantida somente no servidor.
-   - `BOOTSTRAP_ADMIN_PASSWORD` — senha forte de primeiro acesso da nuvem.
-6. Revise e faça o Deploy Blueprint.
+Segredos solicitados no primeiro Blueprint:
 
-O Blueprint já cria um disco persistente de 1 GB montado em `/var/data`, configura backups e ativa o espelho Neon.
+- `DATABASE_URL`: connection string do Neon.
+- `OPENAI_API_KEY`: chave OpenAI do backend (pode ser ativada na etapa da AION Online).
+- `BOOTSTRAP_ADMIN_PASSWORD`: senha de primeiro acesso se o Neon ainda não tiver usuários.
 
-## Validação após deploy
+`AUTH_SIGNING_SECRET` é gerado automaticamente pelo Render e não deve ser commitado.
 
-Abra `/api/health`. O retorno esperado deve conter:
+## Validação mínima
+
+Após o deploy, abra `/api/health` e confirme:
 
 - `ok: true`
-- `systemVersion: 16.3.0-cloud-stable-neon-mirror-aion-1.1`
-- `storage: sqlite-persistent-disk+neon-mirror`
-- `neonMirror.enabled: true`
+- `systemVersion: 17.0.0-neon-primary-render-free-aion-1.1`
+- `storage: neon-primary+ephemeral-sqlite-cache`
+- `cloudPersistence.enabled: true`
+- `cloudPersistence.lastFlushAt` preenchido
 
-Depois valide login, sistema operacional e `/vendas/`.
+Depois valide login, produtos, estoque, entradas, pedidos, romaneio, saídas, clientes, NF, anexos e Life Vendas.
