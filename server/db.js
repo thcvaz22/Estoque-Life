@@ -13,6 +13,10 @@ const path = require('path');
 const fs = require('fs');
 const Database = require('better-sqlite3');
 
+const CLOUD_MODE = String(process.env.CLOUD_MODE || '').toLowerCase() === 'true' || !!process.env.RENDER;
+if (CLOUD_MODE && !process.env.LIFESUCOS_DATA_DIR) {
+  throw new Error('Proteção de dados: LIFESUCOS_DATA_DIR é obrigatório em modo nuvem. Configure um disco persistente antes de iniciar.');
+}
 const DATA_DIR = process.env.LIFESUCOS_DATA_DIR || path.join(__dirname, '..', 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const DB_PATH = path.join(DATA_DIR, 'lifesucos.db');

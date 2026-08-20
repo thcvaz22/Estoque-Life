@@ -12,6 +12,7 @@ const { ensureCerts } = require('./certs');
 const { getLanUrls, getLanIps } = require('./network');
 const remoteConfig = require('./remoteConfig');
 const { scheduleDailyBackups } = require('./cloudBackup');
+const { scheduleNeonMirror } = require('./neonMirror');
 
 const CLOUD_MODE = String(process.env.CLOUD_MODE||'').toLowerCase()==='true' || !!process.env.RENDER;
 const PORT = Number(process.env.PORT || 4000);
@@ -26,7 +27,7 @@ function friendlyListenError(err,port,label){
 function printBanner(){
   console.log('');
   console.log('════════════════════════════════════════════════════════');
-  console.log('   LIFE SUCOS · AION — v16.2 · Skill 1.1 + Neon');
+  console.log('   LIFE SUCOS · AION — v16.3 · Cloud Estável + Neon Mirror + Skill 1.1');
   console.log('════════════════════════════════════════════════════════');
   if(isNewDatabase) console.log('   Banco de dados criado agora (primeira execução).');
   if(CLOUD_MODE){
@@ -48,6 +49,7 @@ server.on('error',err=>{friendlyListenError(err,PORT,'HTTP');process.exit(1);});
 server.listen(PORT,'0.0.0.0',()=>{
   printBanner();
   scheduleDailyBackups();
+  scheduleNeonMirror();
   if(!CLOUD_MODE) startHttps();
 });
 

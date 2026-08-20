@@ -19,7 +19,8 @@ const { createDatabaseBackup } = require('./cloudBackup');
 const { searchAll } = require('./globalSearch');
 
 const router = express.Router();
-const SYSTEM_VERSION = '16.2.0-login-estavel-aion-1.1';
+const SYSTEM_VERSION = '16.3.0-cloud-stable-neon-mirror-aion-1.1';
+const { getNeonMirrorStatus } = require('./neonMirror');
 
 
 function isAdministrator(req) {
@@ -60,7 +61,7 @@ router.get('/health', (req, res) => {
   const httpsPort = Number(process.env.HTTPS_PORT || 4443);
   const cloudMode = String(process.env.CLOUD_MODE||'').toLowerCase()==='true' || !!process.env.RENDER;
   const publicBaseUrl = process.env.PUBLIC_BASE_URL || (cloudMode ? `${req.protocol}://${req.get('host')}` : null);
-  res.json({ ok: true, time: new Date().toISOString(), systemVersion: SYSTEM_VERSION, cloudMode, storage: cloudMode ? 'sqlite-persistent-disk' : 'sqlite-local', publicBaseUrl, sellerUrl: publicBaseUrl ? publicBaseUrl.replace(/\/$/,'') + '/vendas/' : null, lanUrls: cloudMode ? [] : getLanUrls(httpsPort, 'https') });
+  res.json({ ok: true, time: new Date().toISOString(), systemVersion: SYSTEM_VERSION, cloudMode, storage: cloudMode ? 'sqlite-persistent-disk+neon-mirror' : 'sqlite-local', neonMirror: getNeonMirrorStatus(), publicBaseUrl, sellerUrl: publicBaseUrl ? publicBaseUrl.replace(/\/$/,'') + '/vendas/' : null, lanUrls: cloudMode ? [] : getLanUrls(httpsPort, 'https') });
 });
 
 /* ---------- Lotes: leitura direta da tabela relacional ---------- */
