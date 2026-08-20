@@ -3,6 +3,7 @@ services:
     name: life-sucos-aion
     runtime: node
     plan: starter
+    region: virginia
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
@@ -11,10 +12,18 @@ services:
         value: 24.19.0
       - key: CLOUD_MODE
         value: "true"
+      - key: LIFESUCOS_DATA_DIR
+        value: /var/data
+      - key: BACKUP_RETENTION_DAYS
+        value: "30"
       - key: DATABASE_URL
         sync: false
       - key: NEON_POOL_MAX
-        value: "10"
+        value: "5"
+      - key: NEON_MIRROR_ENABLED
+        value: "true"
+      - key: NEON_MIRROR_INTERVAL_MS
+        value: "300000"
       - key: FISCAL_PROVIDER
         value: manual
       - key: AION_EXTERNAL_AI_ENABLED
@@ -29,3 +38,7 @@ services:
         value: admin
       - key: BOOTSTRAP_ADMIN_PASSWORD
         sync: false
+    disk:
+      name: lifesucos-data
+      mountPath: /var/data
+      sizeGB: 1

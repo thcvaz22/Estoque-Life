@@ -1,4 +1,4 @@
-# Life Sucos | AION — v16.2
+# Life Sucos | AION — v16.3
 
 Ecossistema de operação, estoque, vendas remotas, notas fiscais, relatórios e Sistema de Inteligência AION.
 
@@ -120,3 +120,9 @@ A camada analítica passou a produzir comparações MoM/YoY/YTD, médias móveis
 ## v16.2 — correção de login para implantação
 
 A instalação local volta a aceitar `admin / adminlife2026` e `operador / life2026`. O modo nuvem mantém credenciais secretas por variável de ambiente. Se uma base recém-criada por v15/v16.0/v16.1 estiver presa com senha aleatória, a v16.2 faz uma recuperação compatível uma única vez; também existe `recuperar-login.bat`, que não apaga dados operacionais.
+
+## v16.3 — Cloud estável para implantação
+
+Antes do primeiro deploy em produção, a arquitetura foi endurecida para evitar perda de dados: o backend operacional ainda usa SQLite síncrono e transacional, portanto em nuvem ele **exige** um disco persistente em `/var/data`. O `render.yaml` já declara esse disco. Se alguém tentar iniciar o sistema em modo nuvem sem `LIFESUCOS_DATA_DIR`, o servidor falha de propósito em vez de gravar em filesystem efêmero.
+
+O Neon fica ativo nesta versão como **espelho assíncrono de segurança**, atualizado automaticamente em intervalos de 5 minutos quando `DATABASE_URL` estiver configurada. Isso permite validar Neon em produção sem trocar, às pressas, a camada transacional de estoque/FEFO/reservas. O corte definitivo para PostgreSQL como banco operacional principal será feito na v17 após a implantação estar estável.

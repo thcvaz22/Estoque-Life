@@ -1,0 +1,13 @@
+LIFE SUCOS v16.3.0-cloud-stable-neon-mirror-aion-1.1
+
+Objetivo: implantação segura para produção.
+
+- Operação transacional permanece no SQLite já validado.
+- Em Render, o banco SQLite é obrigatório em disco persistente /var/data.
+- Backups consistentes permanecem no mesmo disco para snapshots do provedor.
+- Neon recebe um espelho assíncrono a cada 5 minutos quando DATABASE_URL estiver configurada.
+- AION Official Skill 1.1 preservada.
+- Login local estável preservado.
+- A migração para Neon como banco operacional principal fica para v17, após estabilização da implantação.
+
+Proteção importante: o servidor recusa iniciar em modo nuvem sem LIFESUCOS_DATA_DIR, evitando uso acidental de filesystem efêmero.

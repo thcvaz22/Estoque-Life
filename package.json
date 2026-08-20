@@ -1,7 +1,7 @@
 {
   "name": "life-sucos-sistema",
-  "version": "16.2.0",
-  "description": "Ecossistema Life Sucos — PostgreSQL Neon, AION Online e AION Official Skill v1.1 com benchmarking e análise empresarial avançada.",
+  "version": "16.3.0",
+  "description": "Ecossistema Life Sucos — implantação cloud estável com SQLite persistente, espelho Neon, AION Online e AION Official Skill v1.1.",
   "private": true,
   "main": "server/index.js",
   "scripts": {

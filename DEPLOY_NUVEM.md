@@ -1,33 +1,34 @@
-# Deploy do Life Sucos v15 na nuvem
+# Life Sucos v16.3 — Deploy seguro no Render
 
-## 1. GitHub
-Mantenha o código no repositório `Estoque-Life`. Não envie `data/`, `.env`, bancos SQLite ou chaves.
+## Arquitetura de implantação
 
-## 2. Render
-No Render, crie um **Blueprint** a partir do repositório e use o `render.yaml` da raiz.
+Para a implantação de produção, a v16.3 mantém a camada operacional que já foi validada no SQLite síncrono e transacional. No Render, o SQLite fica obrigatoriamente no disco persistente `/var/data`. O Neon recebe um espelho assíncrono do estado do sistema em intervalos de 5 minutos.
 
-O Blueprint usa:
-- Web Service Node.js (`starter`)
-- disco persistente de 1 GB em `/var/data`
-- `LIFESUCOS_DATA_DIR=/var/data`
-- backup automático do SQLite
+Isso evita uma troca apressada da lógica crítica de estoque/FEFO/reservas antes da implantação. O corte definitivo para PostgreSQL Neon como banco operacional principal será realizado na v17.
 
-Preencha no painel do Render as variáveis marcadas como segredo:
-- `BOOTSTRAP_ADMIN_PASSWORD`
-- `OPENAI_API_KEY`
+## Render Blueprint
 
-## 3. AION Online
-Com `OPENAI_API_KEY` preenchida, a AION passa a usar a OpenAI Responses API. A pesquisa web fica habilitada por `AION_WEB_SEARCH_ENABLED=true`.
+O repositório precisa conter `render.yaml` na raiz. No Render:
 
-## 4. Migrar os dados atuais
-Na instalação local:
-1. Configurações → Backup completo → Exportar backup (.json).
+1. New → Blueprint.
+2. Conecte o GitHub e escolha `thcvaz22/Estoque-Life`.
+3. Branch: `main`.
+4. Blueprint path: `render.yaml`.
+5. Preencha os segredos solicitados no painel:
+   - `DATABASE_URL` — string de conexão pooled do Neon.
+   - `OPENAI_API_KEY` — chave da OpenAI, criada na plataforma e mantida somente no servidor.
+   - `BOOTSTRAP_ADMIN_PASSWORD` — senha forte de primeiro acesso da nuvem.
+6. Revise e faça o Deploy Blueprint.
 
-Na instalação em nuvem:
-1. Login com o admin de primeiro acesso.
-2. Configurações → Restaurar backup.
-3. Se o backup for v6, usuários e hashes de senha também são restaurados.
-4. O sistema encerra sessões antigas e solicita novo login.
+O Blueprint já cria um disco persistente de 1 GB montado em `/var/data`, configura backups e ativa o espelho Neon.
 
-## 5. Contingência
-O SQLite fica no disco persistente do serviço. O Life Sucos também cria cópias íntegras automáticas em `/var/data/backups` e mantém a retenção configurada em `BACKUP_RETENTION_DAYS`.
+## Validação após deploy
+
+Abra `/api/health`. O retorno esperado deve conter:
+
+- `ok: true`
+- `systemVersion: 16.3.0-cloud-stable-neon-mirror-aion-1.1`
+- `storage: sqlite-persistent-disk+neon-mirror`
+- `neonMirror.enabled: true`
+
+Depois valide login, sistema operacional e `/vendas/`.
