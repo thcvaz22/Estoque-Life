@@ -1,0 +1,25 @@
+LIFE SUCOS v16.3 — ARQUIVOS PARA ATUALIZAÇÃO MANUAL NO GITHUB
+
+Substitua/adicione estes arquivos mantendo exatamente as pastas:
+
+RAIZ:
+.env.cloud.example
+DEPLOY_NUVEM.md
+README.md
+package.json
+render.yaml
+VERSAO_V16_3_CLOUD_ESTAVEL.txt (novo)
+
+/server:
+db.js
+index.js
+routes.js
+neonMirror.js (novo)
+
+/scripts:
+launch-app.js
+
+/public:
+index.html
+
+Não envie pasta data, arquivos .env reais, bancos .db/.sqlite, node_modules ou chaves.
