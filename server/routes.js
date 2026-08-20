@@ -19,7 +19,7 @@ const { createDatabaseBackup } = require('./cloudBackup');
 const { searchAll } = require('./globalSearch');
 
 const router = express.Router();
-const SYSTEM_VERSION = '17.1.0-neon-primary-render-free-aion-1.1';
+const SYSTEM_VERSION = '17.2.0-neon-primary-render-free-recebimento-fiscal-aion-1.1';
 const { getCloudPersistenceStatus } = require('./cloudPersistence');
 
 
@@ -256,8 +256,8 @@ router.get('/:store/:id', (req, res) => {
 });
 
 router.put('/:store/:id', (req, res) => {
-  if (req.params.store === 'meta' && (!req.authUser || req.authUser.perfil !== 'Gerente')) {
-    return res.status(403).json({ error: 'Acesso negado — permissão de gerente necessária para alterar configurações.', code: 'MANAGER_REQUIRED' });
+  if (['meta', 'suppliers'].includes(req.params.store) && (!req.authUser || req.authUser.perfil !== 'Gerente')) {
+    return res.status(403).json({ error: req.params.store === 'suppliers' ? 'Acesso negado — permissão de gerente necessária para alterar fornecedores.' : 'Acesso negado — permissão de gerente necessária para alterar configurações.', code: 'MANAGER_REQUIRED' });
   }
   if (!isGenericWritable(req.params.store)) {
     return res.status(403).json({ error: `A coleção "${req.params.store}" não pode ser alterada diretamente. Use os endpoints específicos em /api/stock/*.` });
@@ -297,8 +297,8 @@ router.put('/:store/:id', (req, res) => {
 });
 
 router.delete('/:store/:id', (req, res) => {
-  if (req.params.store === 'meta' && (!req.authUser || req.authUser.perfil !== 'Gerente')) {
-    return res.status(403).json({ error: 'Acesso negado — permissão de gerente necessária para alterar configurações.', code: 'MANAGER_REQUIRED' });
+  if (['meta', 'suppliers'].includes(req.params.store) && (!req.authUser || req.authUser.perfil !== 'Gerente')) {
+    return res.status(403).json({ error: req.params.store === 'suppliers' ? 'Acesso negado — permissão de gerente necessária para alterar fornecedores.' : 'Acesso negado — permissão de gerente necessária para alterar configurações.', code: 'MANAGER_REQUIRED' });
   }
   if (!isGenericWritable(req.params.store)) {
     return res.status(403).json({ error: `A coleção "${req.params.store}" não pode ser alterada diretamente.` });
