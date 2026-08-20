@@ -31,10 +31,18 @@ function saveBinary(invoiceId, filename, b64){
   fs.writeFileSync(fp,Buffer.from(safeBase64(b64),'base64'));
   return fp;
 }
+function resolveFiscalPath(row, kind){
+  if(!row) return null;
+  const current = kind === 'pdf' ? row.pdfPath : row.xmlPath;
+  if(current && fs.existsSync(current)) return current;
+  const filename = kind === 'pdf' ? 'danfe.pdf' : 'nfe.xml';
+  const fallback = path.join(FISCAL_DIR, row.id, filename);
+  return fs.existsSync(fallback) ? fallback : null;
+}
 function invoicePublic(row){
   if(!row) return null;
   const { pdfPath, xmlPath, ...publicRow } = row;
-  return {...publicRow, hasPdf:!!(pdfPath&&fs.existsSync(pdfPath)), hasXml:!!(xmlPath&&fs.existsSync(xmlPath))};
+  return {...publicRow, hasPdf:!!resolveFiscalPath(row,'pdf'), hasXml:!!resolveFiscalPath(row,'xml')};
 }
 function saveHistory(req,tipo,motivo,observacoes=''){
   const row={id:uid('hist'),timestamp:now(),usuario:auditLabel(req),tipo,motivo,observacoes};
@@ -140,19 +148,21 @@ router.put('/invoices/:id',(req,res)=>{
 router.get('/invoices/:id/pdf',(req,res)=>{
   const row=Data.get('fiscalInvoices',req.params.id);
   if(!row) return res.status(404).json({error:'Nota fiscal não encontrada.'});
-  if(!row.pdfPath||!fs.existsSync(row.pdfPath)) return res.status(404).json({error:'Esta NF-e ainda não possui DANFE/PDF armazenado para segunda via.'});
+  const pdfPath=resolveFiscalPath(row,'pdf');
+  if(!pdfPath) return res.status(404).json({error:'Esta NF-e ainda não possui DANFE/PDF armazenado para segunda via.'});
   res.setHeader('Content-Type','application/pdf');
   res.setHeader('Content-Disposition',`inline; filename="NF-${String(row.numero).replace(/[^\w.-]/g,'_')}.pdf"`);
-  fs.createReadStream(row.pdfPath).pipe(res);
+  fs.createReadStream(pdfPath).pipe(res);
 });
 
 router.get('/invoices/:id/xml',(req,res)=>{
   const row=Data.get('fiscalInvoices',req.params.id);
   if(!row) return res.status(404).json({error:'Nota fiscal não encontrada.'});
-  if(!row.xmlPath||!fs.existsSync(row.xmlPath)) return res.status(404).json({error:'Esta NF-e não possui XML autorizado armazenado.'});
+  const xmlPath=resolveFiscalPath(row,'xml');
+  if(!xmlPath) return res.status(404).json({error:'Esta NF-e não possui XML autorizado armazenado.'});
   res.setHeader('Content-Type','application/xml; charset=utf-8');
   res.setHeader('Content-Disposition',`attachment; filename="NF-${String(row.numero).replace(/[^\w.-]/g,'_')}.xml"`);
-  fs.createReadStream(row.xmlPath).pipe(res);
+  fs.createReadStream(xmlPath).pipe(res);
 });
 
 router.get('/orders-ready',(req,res)=>{

@@ -222,6 +222,17 @@ function authenticate(username, password) {
 
 function getAuthSecret() {
   if (AUTH_SECRET) return AUTH_SECRET;
+
+  // v17 cloud: a assinatura de sessão vem de variável de ambiente gerada pelo
+  // Render. Assim reinícios/spin-down do plano Free não invalidam as sessões
+  // apenas porque o filesystem efêmero foi recriado.
+  const configured = String(process.env.AUTH_SIGNING_SECRET || '').trim();
+  if (configured) {
+    if (configured.length < 32) throw new Error('AUTH_SIGNING_SECRET deve ter pelo menos 32 caracteres.');
+    AUTH_SECRET = Buffer.from(configured, 'utf8');
+    return AUTH_SECRET;
+  }
+
   try {
     if (fs.existsSync(AUTH_SECRET_PATH)) {
       const raw = fs.readFileSync(AUTH_SECRET_PATH);
@@ -231,9 +242,9 @@ function getAuthSecret() {
     fs.mkdirSync(path.dirname(AUTH_SECRET_PATH), { recursive: true });
     fs.writeFileSync(AUTH_SECRET_PATH, secret);
     AUTH_SECRET = secret;
+    if (isCloudMode()) console.warn('[auth] AUTH_SIGNING_SECRET ausente; sessões serão invalidadas após reinício.');
     return AUTH_SECRET;
   } catch (err) {
-    // Fallback em memoria. O usuario apenas precisara entrar novamente apos reiniciar.
     console.warn('[auth] Nao foi possivel persistir auth-secret.key; usando segredo temporario:', err.message);
     AUTH_SECRET = crypto.randomBytes(48);
     return AUTH_SECRET;
