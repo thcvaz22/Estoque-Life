@@ -57,6 +57,32 @@ function movementPreview(product, quantidade, unit) {
   return q * factor;
 }
 
+/* ---------- Identificação clara de produto ---------- */
+function volumeToMl(volume) {
+  const raw = String(volume || '').trim().toLowerCase().replace(',', '.').replace(/\s+/g, '');
+  let m = raw.match(/^(\d+(?:\.\d+)?)ml$/i);
+  if (m) return Math.round(Number(m[1]));
+  m = raw.match(/^(\d+(?:\.\d+)?)l$/i);
+  if (m) return Math.round(Number(m[1]) * 1000);
+  return null;
+}
+function productDisplayName(product) {
+  if (!product) return 'Produto';
+  const rawName = String(product.nome || 'Produto').trim();
+  const ml = Number(product.volumeMl || 0) || volumeToMl(product.volume);
+  if (!ml) return rawName;
+  const base = rawName.replace(/\s+\d+(?:[.,]\d+)?\s*(?:ml|l)\s*$/i, '').trim();
+  return `${base} ${ml} ml`;
+}
+function productSelectLabel(product, { includeCode = true, includePackaging = false } = {}) {
+  if (!product) return 'Produto';
+  const parts = [];
+  if (includeCode && product.codigoInterno) parts.push(String(product.codigoInterno));
+  parts.push(productDisplayName(product));
+  if (includePackaging && product.embalagem) parts.push(String(product.embalagem));
+  return parts.join(' · ');
+}
+
 function daysUntil(dateISO) {
   if (!dateISO) return null;
   const target = new Date(dateISO + 'T00:00:00');
