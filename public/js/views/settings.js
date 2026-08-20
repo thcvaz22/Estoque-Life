@@ -16,6 +16,9 @@ async function renderSettings(root) {
   try { health = await (await fetch('/api/health')).json(); } catch (e) { /* servidor pode estar fora do ar */ }
   let aionStatus = null;
   try { aionStatus = await apiFetch('/aion/status'); } catch (e) { /* status opcional */ }
+  const depositProfile = await DB.get('meta','deposit_profile') || {};
+  let fiscalCapabilities = null;
+  try { fiscalCapabilities = await fiscalFetch('/capabilities'); } catch (e) { /* módulo fiscal opcional */ }
 
   root.innerHTML = `
     <div class="grid grid--2">
@@ -72,6 +75,36 @@ async function renderSettings(root) {
         <span class="pill">☁️ ${health?.cloudMode ? 'Esta instalação já está na nuvem' : 'Esta instalação está local'}</span>
       </div>
 
+
+      <div class="card field--full" style="grid-column:1/-1">
+        <div class="section-title" style="margin-top:0">Dados do depósito / emitente</div>
+        <p class="hint">Esses dados aparecem no topo do romaneio de recebimento e serão a base da configuração da emissão de NF-e.</p>
+        <div class="form-grid form-grid--3">
+          <div class="field field--full"><label>Razão social</label><input class="input" id="dp-razao" value="${escapeHTML(depositProfile.razaoSocial||'')}"></div>
+          <div class="field"><label>Nome fantasia</label><input class="input" id="dp-fantasia" value="${escapeHTML(depositProfile.nomeFantasia||'')}"></div>
+          <div class="field"><label>CNPJ</label><input class="input" id="dp-cnpj" value="${escapeHTML(depositProfile.cnpj||'')}"></div>
+          <div class="field"><label>Inscrição estadual</label><input class="input" id="dp-ie" value="${escapeHTML(depositProfile.inscricaoEstadual||'')}"></div>
+          <div class="field"><label>Regime tributário</label><select class="input" id="dp-crt"><option value="">Selecione…</option><option value="1" ${String(depositProfile.regimeTributario||'')==='1'?'selected':''}>Simples Nacional</option><option value="2" ${String(depositProfile.regimeTributario||'')==='2'?'selected':''}>Simples Nacional · excesso sublimite</option><option value="3" ${String(depositProfile.regimeTributario||'')==='3'?'selected':''}>Regime Normal</option></select></div>
+          <div class="field field--full"><label>Logradouro</label><input class="input" id="dp-log" value="${escapeHTML(depositProfile.logradouro||'')}"></div>
+          <div class="field"><label>Número</label><input class="input" id="dp-num" value="${escapeHTML(depositProfile.numero||'')}"></div>
+          <div class="field"><label>Complemento</label><input class="input" id="dp-comp" value="${escapeHTML(depositProfile.complemento||'')}"></div>
+          <div class="field"><label>Bairro</label><input class="input" id="dp-bairro" value="${escapeHTML(depositProfile.bairro||'')}"></div>
+          <div class="field"><label>Cidade</label><input class="input" id="dp-cidade" value="${escapeHTML(depositProfile.cidade||'')}"></div>
+          <div class="field"><label>UF</label><input class="input" maxlength="2" id="dp-uf" value="${escapeHTML(depositProfile.uf||'')}"></div>
+          <div class="field"><label>CEP</label><input class="input" id="dp-cep" value="${escapeHTML(depositProfile.cep||'')}"></div>
+          <div class="field"><label>Cód. município IBGE</label><input class="input" id="dp-ibge" value="${escapeHTML(depositProfile.codigoMunicipioIBGE||'')}"></div>
+          <div class="field"><label>Telefone</label><input class="input" id="dp-tel" value="${escapeHTML(depositProfile.telefone||'')}"></div>
+          <div class="field"><label>E-mail</label><input class="input" id="dp-email" value="${escapeHTML(depositProfile.email||'')}"></div>
+        </div>
+        <div class="form-actions"><button class="btn btn--primary" id="dp-save">Salvar dados do depósito</button></div>
+      </div>
+
+      <div class="card field--full" style="grid-column:1/-1">
+        <div class="section-title" style="margin-top:0">Emissão de NF-e</div>
+        <p class="hint">A central fiscal já controla documentos e devoluções. Para transmitir uma NF-e válida à SEFAZ, o servidor precisa de um emissor fiscal e certificado digital A1 da empresa.</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="pill">Modo: ${escapeHTML(fiscalCapabilities?.mode||'manual')}</span><span class="pill">${fiscalCapabilities?.automaticEmissionConfigured?'✅ Emissor configurado':'⚠️ Emissor ainda não configurado'}</span><span class="pill">Devolução fiscal: pronta para preparação</span></div>
+      </div>
+
       <div class="card field--full" style="grid-column:1/-1">
         <div class="section-title" style="margin-top:0">Resumo do banco de dados</div>
         <div class="grid grid--stats">
@@ -80,6 +113,11 @@ async function renderSettings(root) {
       </div>
     </div>
   `;
+
+  document.getElementById('dp-save').onclick = async () => {
+    const row={id:'deposit_profile',razaoSocial:document.getElementById('dp-razao').value.trim(),nomeFantasia:document.getElementById('dp-fantasia').value.trim(),cnpj:document.getElementById('dp-cnpj').value.replace(/\D/g,''),inscricaoEstadual:document.getElementById('dp-ie').value.trim(),regimeTributario:document.getElementById('dp-crt').value,logradouro:document.getElementById('dp-log').value.trim(),numero:document.getElementById('dp-num').value.trim(),complemento:document.getElementById('dp-comp').value.trim(),bairro:document.getElementById('dp-bairro').value.trim(),cidade:document.getElementById('dp-cidade').value.trim(),uf:document.getElementById('dp-uf').value.trim().toUpperCase(),cep:document.getElementById('dp-cep').value.replace(/\D/g,''),codigoMunicipioIBGE:document.getElementById('dp-ibge').value.replace(/\D/g,''),telefone:document.getElementById('dp-tel').value.trim(),email:document.getElementById('dp-email').value.trim(),atualizadoEm:new Date().toISOString()};
+    try{await DB.put('meta',row);toast('Dados do depósito salvos.','success');}catch(e){toast(e.message,'error');}
+  };
 
   document.getElementById('st-export').onclick = exportFullBackup;
   document.getElementById('st-export-sqlite').onclick = () => window.location.href = '/api/backup/sqlite';

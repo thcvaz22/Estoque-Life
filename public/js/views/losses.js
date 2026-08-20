@@ -17,11 +17,12 @@ async function renderLosses(root) {
     </div>
     <div class="table-wrap">
       <table class="data">
-        <thead><tr><th>Data</th><th>Produto</th><th>Qtd.</th><th>Origem</th><th>Motivo</th><th>Responsável</th></tr></thead>
+        <thead><tr><th>Data</th><th>Produto</th><th>Qtd.</th><th>Devolução</th><th>Origem</th><th>Motivo</th><th>Responsável</th></tr></thead>
         <tbody>
-          ${losses.length === 0 ? `<tr><td colspan="6"><div class="empty-state"><div class="big">📦💥</div><p>Nenhuma avaria ou perda registrada.</p></div></td></tr>` :
+          ${losses.length === 0 ? `<tr><td colspan="7"><div class="empty-state"><div class="big">📦💥</div><p>Nenhuma avaria ou perda registrada.</p></div></td></tr>` :
             losses.map(l => `<tr>
               <td>${fmtDate(l.data)}</td><td>${escapeHTML(l.produtoNome)}</td><td class="cell-mono">${fmtNumber(l.quantidade)}</td>
+              <td>${Number(l.quantidadeDevolvida||0)>0 ? statusStamp(`${fmtNumber(l.quantidadeDevolvida)} devolvida(s)`, Number(l.quantidadeDevolvida||0)>=Number(l.quantidade||0)?'ok':'warn') : statusStamp('Pendente','neutral')}</td>
               <td>${l.origem === 'bloqueado' ? statusStamp('Bloqueado', 'neutral') : statusStamp('Disponível', 'info')}</td>
               <td>${statusStamp(l.motivo, 'danger')}</td><td>${escapeHTML(l.responsavel)}</td>
             </tr>`).join('')}

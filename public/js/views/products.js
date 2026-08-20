@@ -124,7 +124,7 @@ function collectProductDraft(isEdit) {
   return {
     codigoInterno: g('f-codigo-interno'), codigoBarras: g('f-codigo'), nome: g('f-nome'), marca: g('f-marca'), sabor: g('f-sabor'),
     volume: g('f-volume'), embalagem: g('f-embalagem'), qtdPorEmbalagem: g('f-qtdemb'), fardosPorPalete: g('f-fpp'), nomeFardo: g('f-nomefardo'),
-    estoqueMinimo: g('f-min'), custoAtual: g('f-custo'), localizacao: g('f-loc'),
+    estoqueMinimo: g('f-min'), custoAtual: g('f-custo'), localizacao: g('f-loc'), ncm: g('f-ncm'), cest: g('f-cest'), cfopDevolucaoInterna: g('f-cfop-in'), cfopDevolucaoInterestadual: g('f-cfop-out'),
     lote: isEdit ? '' : g('f-lote'), fabricacao: isEdit ? '' : g('f-fab'),
     validade: isEdit ? '' : g('f-val'), qtd: isEdit ? '' : g('f-qtd')
   };
@@ -159,6 +159,10 @@ function openProductForm(product, prefillCode, draft) {
       <div class="field"><label>Estoque mínimo</label><input class="input" type="number" min="0" id="f-min" value="${draft?.estoqueMinimo || product?.estoqueMinimo || 10}"></div>
       <div class="field"><label>Custo unitário (R$)</label><input class="input" type="number" min="0" step="0.01" id="f-custo" value="${draft?.custoAtual !== undefined ? draft.custoAtual : Number(product?.custoAtual || 0)}" placeholder="Ex: 4,35"><span class="hint">Agora o custo pode ser cadastrado já no novo produto e continua sendo atualizado nas entradas.</span></div>
       <div class="field field--full"><label>Localização no depósito (Rua · Prateleira · Posição)</label><input class="input" id="f-loc" placeholder="Ex: Rua 1 · Prateleira A · Pos. 3" value="${v('localizacao')}"></div>
+      <div class="field"><label>NCM</label><input class="input cell-mono" id="f-ncm" maxlength="8" value="${v('ncm')}" placeholder="8 dígitos"></div>
+      <div class="field"><label>CEST (se aplicável)</label><input class="input cell-mono" id="f-cest" value="${v('cest')}"></div>
+      <div class="field"><label>CFOP devolução · mesma UF</label><input class="input cell-mono" id="f-cfop-in" maxlength="4" value="${v('cfopDevolucaoInterna')}" placeholder="Validar com contador"></div>
+      <div class="field"><label>CFOP devolução · outra UF</label><input class="input cell-mono" id="f-cfop-out" maxlength="4" value="${v('cfopDevolucaoInterestadual')}" placeholder="Validar com contador"></div>
     </div>
     ${!isEdit ? `
     <div class="section-title">Lote inicial (opcional)</div>
@@ -203,7 +207,11 @@ function openProductForm(product, prefillCode, draft) {
       fardosPorPalete: Number(document.getElementById('f-fpp').value) || null,
       estoqueMinimo: Number(document.getElementById('f-min').value) || 0,
       localizacao: document.getElementById('f-loc').value.trim(),
-      custoAtual: Number(document.getElementById('f-custo')?.value || product?.custoAtual || 0)
+      custoAtual: Number(document.getElementById('f-custo')?.value || product?.custoAtual || 0),
+      ncm: document.getElementById('f-ncm').value.replace(/\D/g,''),
+      cest: document.getElementById('f-cest').value.replace(/\D/g,''),
+      cfopDevolucaoInterna: document.getElementById('f-cfop-in').value.replace(/\D/g,''),
+      cfopDevolucaoInterestadual: document.getElementById('f-cfop-out').value.replace(/\D/g,'')
     };
     if (isEdit) {
       const requestedCost = Number(data.custoAtual || 0);

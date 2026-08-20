@@ -17,30 +17,32 @@ async function renderEntries(root) {
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <label class="btn" for="xml-input">📄 Importar XML da NF</label>
         <input type="file" id="xml-input" accept=".xml" hidden>
-        <button class="btn" id="photo-entry-btn">📷 Fotografar / Importar foto da NF</button>
+        <button class="btn" id="photo-entry-btn">📷 Fotografar / Importar páginas da NF</button>
         <button class="btn btn--primary" id="new-entry-btn">+ Cadastrar manualmente</button>
       </div>
     </div>
     <div class="table-wrap">
       <table class="data">
-        <thead><tr><th>Data</th><th>Fornecedor</th><th>NF</th><th>Itens</th><th>Qtd. total</th><th>Origem</th></tr></thead>
+        <thead><tr><th>Data</th><th>Fornecedor</th><th>NF</th><th>Itens</th><th>Qtd. total</th><th>Origem</th><th></th></tr></thead>
         <tbody id="entries-tbody"></tbody>
       </table>
     </div>
   `;
 
   const tbody = document.getElementById('entries-tbody');
-  tbody.innerHTML = entries.length === 0 ? `<tr><td colspan="6"><div class="empty-state"><div class="big">📥</div><p>Nenhuma entrada registrada ainda.</p></div></td></tr>` :
+  tbody.innerHTML = entries.length === 0 ? `<tr><td colspan="7"><div class="empty-state"><div class="big">📥</div><p>Nenhuma entrada registrada ainda.</p></div></td></tr>` :
     entries.map(e => `<tr>
       <td>${fmtDate(e.data)}</td><td>${escapeHTML(e.fornecedor)}</td><td class="cell-mono">${escapeHTML(e.nf || '—')}</td>
       <td>${e.itens.length}</td><td class="cell-mono">${fmtNumber(e.itens.reduce((a, i) => a + Number(i.quantidade || 0), 0))}</td>
       <td>
-        ${e.origemXML ? statusStamp('XML', 'info') : e.origemFoto ? statusStamp('Foto', 'info') : statusStamp('Manual', 'neutral')}
+        ${e.origemXML ? statusStamp('XML', 'info') : e.origemFoto ? statusStamp((e.fotos||[]).length > 1 ? `${e.fotos.length} páginas` : 'Foto', 'info') : statusStamp('Manual', 'neutral')}
         ${e.fotos && e.fotos.length ? ` <button class="icon-btn" data-viewphotos='${JSON.stringify(e.fotos)}' title="Ver foto(s) da NF">🖼️</button>` : ''}
       </td>
+      <td><button class="btn btn--ghost btn--sm" data-entry-manifest="${e.id}">Romaneio</button></td>
     </tr>`).join('');
 
   tbody.querySelectorAll('[data-viewphotos]').forEach(b => b.onclick = () => openPhotoViewer(JSON.parse(b.dataset.viewphotos)));
+  tbody.querySelectorAll('[data-entry-manifest]').forEach(b => b.onclick = async () => { try { await generateReceivingManifest(b.dataset.entryManifest); } catch (err) { toast(err.message,'error'); } });
 
   document.getElementById('new-entry-btn').onclick = () => openEntryForm();
   document.getElementById('photo-entry-btn').onclick = () => openPhotoCaptureModal();
@@ -55,13 +57,13 @@ async function renderEntries(root) {
         const match = products.find(p => (p.codigoInterno && i.codigoProduto && String(p.codigoInterno) === String(i.codigoProduto)) || (p.codigoBarras && i.codigoBarras && p.codigoBarras === i.codigoBarras));
         return {
           codigoBarras: i.codigoBarras, nomeSugerido: i.nome, produtoId: match ? match.id : null, produtoNome: match ? match.nome : null,
-          quantidade: i.quantidade, custoUnitario: Number(i.valorUnitario || 0) > 0 ? Number(i.valorUnitario) : null, lote: i.lote, fabricacao: i.fabricacao ? i.fabricacao.slice(0, 10) : '',
+          quantidade: i.quantidade, custoUnitario: Number(i.valorUnitario || 0) > 0 ? Number(i.valorUnitario) : null, valorTotalItem: Number(i.valorTotalItem || 0), fiscal: i.fiscal || null, lote: i.lote, fabricacao: i.fabricacao ? i.fabricacao.slice(0, 10) : '',
           validade: i.validade ? i.validade.slice(0, 10) : '', embalagem: normalizeMovementUnit(i.unidade || 'Unidade')
         };
       });
       const semMatch = itens.filter(i => !i.produtoId).length;
       toast(`XML lido: ${itens.length} item(ns)${semMatch ? `, ${semMatch} sem produto correspondente` : ''}.`, semMatch ? 'warn' : 'success');
-      openEntryForm({ data: todayISO(), fornecedor: parsed.fornecedor, nf: parsed.nf, chaveNFe: parsed.chaveNFe, origemXML: true, itens });
+      openEntryForm({ data: todayISO(), fornecedor: parsed.fornecedor, cnpjFornecedor: parsed.cnpjFornecedor, fornecedorDados: parsed.fornecedorDados, nf: parsed.nf, serie: parsed.serie, chaveNFe: parsed.chaveNFe, valorTotalMercadorias: parsed.valorTotal || parsed.valorProdutos || 0, origemXML: true, itens });
     } catch (err) {
       toast('Erro ao ler XML: ' + err.message, 'error');
     }
@@ -92,7 +94,7 @@ function openPhotoCaptureModal() {
 
   function render() {
     openModal('Foto da Nota Fiscal', `
-      <p class="hint">Tire uma foto ou escolha da galeria. Se a nota tiver mais de uma página, adicione uma foto de cada.</p>
+      <p class="hint"><strong>Pode adicionar várias imagens.</strong> Para NF com 2 ou mais páginas, fotografe/importe cada página antes de analisar.</p>
       <div id="photo-thumbs" style="display:flex;gap:10px;flex-wrap:wrap;margin:12px 0">
         ${photos.map((p, i) => `
           <div style="position:relative">
@@ -147,7 +149,7 @@ function openPhotoCaptureModal() {
           toast(`${result.paginasAnalisadas} imagem(ns) analisada(s). Confira os dados antes de salvar.`, 'success');
         }
         openEntryForm({
-          data: todayISO(), fornecedor: result.fornecedor || '', nf: result.nf || '',
+          data: todayISO(), fornecedor: result.fornecedor || '', cnpjFornecedor: result.cnpjFornecedor || '', nf: result.nf || '', serie: result.serie || '', valorTotalMercadorias: Number(result.valorTotal || 0),
           chaveNFe: result.chaveNFe || '', origemFoto: true, fotos: (result.fotos || []).map(f => f.id),
           duplicadoAviso: result.duplicado || null,
           itens: (result.itens || []).map(it => ({
@@ -166,12 +168,19 @@ function openPhotoCaptureModal() {
   render();
 }
 
-function openEntryForm(state) {
+async function openEntryForm(state) {
+  const suppliers = (await DB.all('suppliers')).filter(x => x.ativo !== false);
+  const supplierMatch = suppliers.find(x => state?.fornecedorId && x.id === state.fornecedorId) || suppliers.find(x => state?.cnpjFornecedor && String(x.cnpjCpf||x.cnpj||x.cpf||'').replace(/\D/g,'') === String(state.cnpjFornecedor).replace(/\D/g,'')) || suppliers.find(x => String(x.razaoSocial||x.nome||'').trim().toLowerCase() === String(state?.fornecedor||'').trim().toLowerCase());
   const s = {
     data: state?.data || todayISO(),
-    fornecedor: state?.fornecedor || '',
+    fornecedor: state?.fornecedor || supplierMatch?.razaoSocial || supplierMatch?.nome || '',
+    fornecedorId: state?.fornecedorId || supplierMatch?.id || '',
+    cnpjFornecedor: state?.cnpjFornecedor || supplierMatch?.cnpjCpf || '',
+    fornecedorDados: state?.fornecedorDados || null,
     nf: state?.nf || '',
+    serie: state?.serie || '',
     chaveNFe: state?.chaveNFe || '',
+    valorTotalMercadorias: Number(state?.valorTotalMercadorias || 0),
     origemXML: !!state?.origemXML,
     origemFoto: !!state?.origemFoto,
     fotos: state?.fotos || [],
@@ -190,8 +199,11 @@ function openEntryForm(state) {
     ${s.origemFoto ? `<p class="hint">📷 Dados lidos automaticamente da foto — confira tudo com atenção antes de salvar. Você pode editar qualquer campo.</p>` : ''}
     <div class="form-grid form-grid--3">
       <div class="field"><label>Data de chegada</label><input class="input" type="date" id="e-data" value="${s.data}"></div>
-      <div class="field field--full"><label>Fornecedor</label><input class="input" id="e-forn" list="aion-suppliers-list" value="${escapeHTML(s.fornecedor)}"><datalist id="aion-suppliers-list"></datalist></div>
+      <div class="field field--full"><label>Fornecedor cadastrado</label><select class="input" id="e-forn-id"><option value="">Fornecedor avulso / não cadastrado</option>${suppliers.map(x => `<option value="${x.id}" ${s.fornecedorId===x.id?'selected':''}>${escapeHTML(x.razaoSocial||x.nome)}${x.cnpjCpf?` · ${escapeHTML(x.cnpjCpf)}`:''}</option>`).join('')}</select><span class="hint">Cadastre os fornecedores na aba Fornecedores para reutilizar dados no romaneio e nas devoluções.</span>${s.fornecedorDados && !s.fornecedorId && typeof Auth!=='undefined' && Auth.isManager && Auth.isManager()?`<button class="btn btn--sm" id="e-save-supplier" type="button" style="margin-top:6px">+ Salvar fornecedor identificado na NF</button>`:''}</div>
+      <div class="field field--full"><label>Nome do fornecedor</label><input class="input" id="e-forn" value="${escapeHTML(s.fornecedor)}"></div>
       <div class="field"><label>Número da NF</label><input class="input" id="e-nf" value="${escapeHTML(s.nf)}"></div>
+      <div class="field"><label>Série</label><input class="input" id="e-serie" value="${escapeHTML(s.serie)}"></div>
+      <div class="field"><label>Valor total mercadorias (R$)</label><input class="input" type="number" min="0" step="0.01" id="e-total" value="${s.valorTotalMercadorias||''}"></div>
       ${s.chaveNFe ? `<div class="field field--full"><label>Chave da NF-e</label><input class="input cell-mono" id="e-chave" value="${escapeHTML(s.chaveNFe)}" readonly></div>` : ''}
     </div>
     <div class="section-title">Itens</div>
@@ -206,12 +218,34 @@ function openEntryForm(state) {
     </div>
   `, { wide: true });
 
-  if (typeof AionIA !== 'undefined' && AionIA.loadCatalogs) {
-    AionIA.loadCatalogs().then(c => {
-      const dl = document.getElementById('aion-suppliers-list');
-      if (dl) dl.innerHTML = (c.suppliers || []).filter(x => x.ativo !== false).map(x => `<option value="${escapeHTML(x.nome)}"></option>`).join('');
-    }).catch(() => {});
-  }
+  const supplierSelect = document.getElementById('e-forn-id');
+  supplierSelect.addEventListener('change', () => {
+    const supplier = suppliers.find(x => x.id === supplierSelect.value);
+    if (supplier) document.getElementById('e-forn').value = supplier.razaoSocial || supplier.nome || '';
+  });
+
+  const quickSupplierBtn = document.getElementById('e-save-supplier');
+  if (quickSupplierBtn) quickSupplierBtn.onclick = async () => {
+    const d = s.fornecedorDados || {};
+    const razao = String(d.razaoSocial || s.fornecedor || '').trim();
+    const doc = String(d.cnpjCpf || d.cnpj || d.cpf || s.cnpjFornecedor || '').replace(/\D/g,'');
+    if (!razao || !doc) { toast('A NF não trouxe razão social/CNPJ suficiente para cadastrar automaticamente.', 'warn'); return; }
+    const now = new Date().toISOString();
+    const row = {
+      id: uid('supplier'), razaoSocial: razao, nome: razao, nomeFantasia: d.nomeFantasia || '', cnpjCpf: doc,
+      inscricaoEstadual: d.inscricaoEstadual || '', telefone: d.telefone || '', email: d.email || '',
+      logradouro: d.logradouro || '', numero: d.numero || '', complemento: d.complemento || '', bairro: d.bairro || '',
+      cidade: d.cidade || '', uf: String(d.uf || '').toUpperCase(), cep: String(d.cep || '').replace(/\D/g,''),
+      codigoMunicipioIBGE: String(d.codigoMunicipioIBGE || '').replace(/\D/g,''), ativo: true,
+      origem: 'xml_nfe', criadoEm: now, atualizadoEm: now
+    };
+    try {
+      await DB.put('suppliers', row);
+      toast('Fornecedor salvo a partir dos dados da NF.', 'success');
+      const preserved = readHeader(); preserved.fornecedorId = row.id; preserved.cnpjFornecedor = row.cnpjCpf; preserved.fornecedor = row.razaoSocial; preserved.fornecedorDados = null;
+      openEntryForm(preserved);
+    } catch (err) { toast(err.message, 'error'); }
+  };
 
   const viewPhotosBtn = document.getElementById('view-photos-btn');
   if (viewPhotosBtn) viewPhotosBtn.onclick = () => openPhotoViewer(s.fotos);
@@ -223,7 +257,12 @@ function openEntryForm(state) {
     return {
       data: document.getElementById('e-data').value || todayISO(),
       fornecedor: document.getElementById('e-forn').value,
+      fornecedorId: document.getElementById('e-forn-id').value,
+      cnpjFornecedor: (suppliers.find(x => x.id === document.getElementById('e-forn-id').value)?.cnpjCpf || s.cnpjFornecedor || ''),
+      fornecedorDados: s.fornecedorDados,
       nf: document.getElementById('e-nf').value,
+      serie: document.getElementById('e-serie').value,
+      valorTotalMercadorias: Number(document.getElementById('e-total').value || 0),
       chaveNFe: s.chaveNFe,
       origemXML: s.origemXML,
       origemFoto: s.origemFoto,
@@ -279,7 +318,7 @@ function openEntryForm(state) {
             <span class="hint">✅ Vinculado</span>
           </div>
           <div class="field"><label>Quantidade</label><input class="input item-qtd" type="number" min="0" data-idx="${idx}" value="${it.quantidade || 0}"></div>
-          <div class="field"><label>Custo unitário (R$)</label><input class="input item-custo" type="number" min="0" step="0.01" data-idx="${idx}" value="${Number(it.custoUnitario ?? products.find(p=>p.id===it.produtoId)?.custoAtual ?? 0)}"><span class="hint">Ao registrar, este valor vira o custo atual do produto.</span></div>
+          <div class="field"><label>Valor unitário da NF (R$)</label><input class="input item-custo" type="number" min="0" step="0.01" data-idx="${idx}" value="${Number(it.custoUnitario ?? products.find(p=>p.id===it.produtoId)?.custoAtual ?? 0)}"><span class="hint">Usado também no total do romaneio e histórico de custo.</span></div>
           <div class="field">
             <label>Unidade de movimentação${it.unidadeNaoIdentificada ? ' · <span style="color:var(--alert)">não identificada</span>' : ''}</label>
             <select class="input item-emb" data-idx="${idx}">
@@ -366,7 +405,11 @@ function openEntryForm(state) {
     if (!ensureServerOnlineForCriticalAction()) return;
     const data = document.getElementById('e-data').value || todayISO();
     const fornecedor = document.getElementById('e-forn').value.trim();
+    const fornecedorId = document.getElementById('e-forn-id').value || null;
+    const supplier = suppliers.find(x => x.id === fornecedorId);
     const nf = document.getElementById('e-nf').value.trim();
+    const serie = document.getElementById('e-serie').value.trim();
+    const valorTotalMercadorias = Number(document.getElementById('e-total').value || 0);
     if (!fornecedor) { toast('Informe o fornecedor.', 'warn'); return; }
     if (items.length === 0) { toast('Adicione ao menos um item.', 'warn'); return; }
     const pendentes = items.filter(i => !i.produtoId);
@@ -375,14 +418,15 @@ function openEntryForm(state) {
     if (semQtd.length > 0) { toast('Todo item precisa de uma quantidade maior que zero.', 'warn'); return; }
 
     try {
-      await withBusyButton(saveBtn, 'Registrando…', () => postStock('/entries', {
+      const saved = await withBusyButton(saveBtn, 'Registrando…', () => postStock('/entries', {
         operationId: genOperationId(),
-        fornecedor, nf, chaveNFe: s.chaveNFe || null, data, origemXML: s.origemXML, origemFoto: s.origemFoto, fotos: s.fotos,
-        itens: items.map(i => ({ produtoId: i.produtoId, quantidade: i.quantidade, unidadeMovimentacao: normalizeMovementUnit(i.embalagem), lote: i.lote, fabricacao: i.fabricacao, validade: i.validade, custoUnitario: Number(i.custoUnitario || 0), embalagem: normalizeMovementUnit(i.embalagem) }))
+        fornecedor, fornecedorId, cnpjFornecedor: supplier?.cnpjCpf || s.cnpjFornecedor || null, nf, serie, chaveNFe: s.chaveNFe || null, data, valorTotalMercadorias, origemXML: s.origemXML, origemFoto: s.origemFoto, fotos: s.fotos,
+        itens: items.map(i => ({ produtoId: i.produtoId, quantidade: i.quantidade, unidadeMovimentacao: normalizeMovementUnit(i.embalagem), lote: i.lote, fabricacao: i.fabricacao, validade: i.validade, custoUnitario: Number(i.custoUnitario || 0), valorTotalItem: Number(i.valorTotalItem || 0), fiscal: i.fiscal || null, embalagem: normalizeMovementUnit(i.embalagem) }))
       }));
-      toast('Entrada registrada com sucesso.', 'success');
+      toast('Entrada registrada. Romaneio de conferência gerado.', 'success');
       closeModal();
       navigate('entries');
+      if (saved?.id) setTimeout(() => generateReceivingManifest(saved.id).catch(err => toast('Entrada salva, mas o romaneio não abriu: '+err.message,'warn')), 350);
     } catch (err) {
       toast(err.message, 'error');
     }

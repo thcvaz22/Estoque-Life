@@ -29,9 +29,71 @@ function reportNFValue(r) {
   return String(r.nfNumero || '');
 }
 function reportPartyValue(r) { return String(r.cliente || r.clienteNome || r.fornecedor || r.motorista || '').trim(); }
-function reportStatusValue(r) { return String(r.status || r.statusAprovacao || r.tipo || '').trim(); }
+function reportStatusValue(r) { return [r.status, r.statusAprovacao, r.tipo].filter(Boolean).join(' ').trim(); }
 
 const REPORT_DEFS = {
+  romaneios: {
+    label:'Romaneios',
+    load: async()=>{
+      const [entries, manifests] = await Promise.all([
+        DB.all('entries'),
+        DB.all('shippingManifests').catch(()=>[])
+      ]);
+      const incoming = entries.map(e=>({
+        ...e,
+        _reportKey:`entrada:${e.id}`,
+        _romaneioTipo:'entrada',
+        _sourceId:e.id,
+        tipo:'Entrada',
+        documento:e.nf ? `NF ${e.nf}${e.serie ? ` · Série ${e.serie}` : ''}` : 'Entrada sem NF',
+        parceiro:e.fornecedor||'—',
+        nfs:e.nf ? [{numero:e.nf}] : [],
+        quantidadeTotal:(e.itens||[]).reduce((a,i)=>a+Number(i.quantidade||0),0),
+        valorRomaneio:Number(e.valorTotalMercadorias||0),
+        status:'Disponível',
+        dataRomaneio:e.dataChegada||e.data||e.criadoEm
+      }));
+      const outgoing = manifests.map(m=>({
+        ...m,
+        _reportKey:`saida:${m.id}`,
+        _romaneioTipo:'saida',
+        _sourceId:m.id,
+        _manifest:m,
+        tipo:'Saída',
+        documento:m.numero||m.id,
+        parceiro:[...new Set((m.pedidos||[]).map(p=>p.cliente).filter(Boolean))].join(', ')||'—',
+        cliente:[...new Set((m.pedidos||[]).map(p=>p.cliente).filter(Boolean))].join(', '),
+        nfs:(m.pedidos||[]).map(p=>({numero:p.nfNumero||p.numero||''})),
+        itens:(m.totais||[]).map(i=>({produtoNome:i.produtoNome,quantidade:i.quantidadeUnidades})),
+        quantidadeTotal:(m.totais||[]).reduce((a,i)=>a+Number(i.quantidadeUnidades||0),0),
+        valorRomaneio:null,
+        responsavel:m.criadoPor||'',
+        dataRomaneio:m.data||m.criadoEm
+      }));
+      return incoming.concat(outgoing).sort((a,b)=>String(b.dataRomaneio||'').localeCompare(String(a.dataRomaneio||'')));
+    },
+    headers:[
+      {label:'Tipo',key:'tipo'},
+      {label:'Data',get:r=>fmtDate(r.dataRomaneio)},
+      {label:'Romaneio / NF',key:'documento'},
+      {label:'Fornecedor / Cliente',key:'parceiro'},
+      {label:'NFs',get:r=>(r.nfs||[]).map(n=>n.numero).filter(Boolean).join(', ')||'—'},
+      {label:'Quantidade',get:r=>`${fmtNumber(r.quantidadeTotal||0)} un.`},
+      {label:'Valor',get:r=>r.valorRomaneio==null?'—':Number(r.valorRomaneio||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})},
+      {label:'Status',get:r=>r.status||'Disponível'},
+      {label:'Gerado por',get:r=>r.responsavel||r.criadoPor||'—'}
+    ],
+    action:{
+      label:'Emitir / PDF',
+      onClick:async r=>{
+        if(r._romaneioTipo==='entrada') return generateReceivingManifest(r._sourceId);
+        if(r._romaneioTipo==='saida'){
+          if(typeof manifestModal!=='function') throw new Error('Gerador de romaneio de saída não está disponível. Atualize a página e tente novamente.');
+          return manifestModal(r._manifest||r,true);
+        }
+      }
+    }
+  },
   pedidos: {
     label:'Pedidos', load: async()=>{ try{return await commercialFetch('/orders')}catch{return []} },
     headers:[
@@ -152,11 +214,25 @@ async function renderReports(root) {
       return true;
     });
     const def=REPORT_DEFS[_currentReport];
+    const hasAction=!!def.action;
+    const colspan=def.headers.length+(hasAction?1:0);
     document.getElementById('rp-count').textContent=`${filtered.length} registro(s) após os filtros`;
-    document.getElementById('rp-tbody').innerHTML=filtered.length===0?`<tr><td colspan="${def.headers.length}"><div class="empty-state"><div class="big">📄</div><p>Nenhum registro encontrado com esses filtros.</p></div></td></tr>`:filtered.slice(0,500).map(r=>`<tr>${def.headers.map(h=>`<td>${escapeHTML(typeof h.get==='function'?h.get(r):(r[h.key]??'—'))}</td>`).join('')}</tr>`).join('')+(filtered.length>500?`<tr><td colspan="${def.headers.length}" class="hint">Mostrando 500 registros na tela. A exportação usa todos os ${filtered.length} resultados filtrados.</td></tr>`:'');
+    document.getElementById('rp-tbody').innerHTML=filtered.length===0?`<tr><td colspan="${colspan}"><div class="empty-state"><div class="big">📄</div><p>Nenhum registro encontrado com esses filtros.</p></div></td></tr>`:filtered.slice(0,500).map(r=>{
+      const key=String(r._reportKey||r.id||'');
+      const cells=def.headers.map(h=>`<td>${escapeHTML(typeof h.get==='function'?h.get(r):(r[h.key]??'—'))}</td>`).join('');
+      const action=hasAction?`<td><button class="btn btn--sm btn--primary" data-rp-action="${escapeHTML(key)}">${escapeHTML(def.action.label||'Abrir')}</button></td>`:'';
+      return `<tr>${cells}${action}</tr>`;
+    }).join('')+(filtered.length>500?`<tr><td colspan="${colspan}" class="hint">Mostrando 500 registros na tela. A exportação usa todos os ${filtered.length} resultados filtrados.</td></tr>`:'');
+    if(hasAction){
+      document.querySelectorAll('[data-rp-action]').forEach(btn=>btn.onclick=async()=>{
+        const row=filtered.find(r=>String(r._reportKey||r.id||'')===btn.dataset.rpAction);
+        if(!row)return;
+        try{await def.action.onClick(row);}catch(err){toast(err.message||'Não foi possível emitir o romaneio.','error');}
+      });
+    }
   }
   async function loadReport(){
-    const def=REPORT_DEFS[_currentReport]; document.getElementById('rp-thead').innerHTML=`<tr>${def.headers.map(h=>`<th>${h.label}</th>`).join('')}</tr>`;
+    const def=REPORT_DEFS[_currentReport]; document.getElementById('rp-thead').innerHTML=`<tr>${def.headers.map(h=>`<th>${h.label}</th>`).join('')}${def.action?'<th>Ações</th>':''}</tr>`;
     rawRows=await def.load();
     const currentUserFilter=document.getElementById('rp-user').value;
     users=[...new Set(rawRows.map(reportUserValue).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
