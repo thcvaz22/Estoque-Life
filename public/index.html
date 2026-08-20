@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Life Sucos · Controle de Estoque</title>
+<meta name="description" content="Sistema de gestão de estoque para a Life Sucos — entradas, saídas, backlog, inventário e relatórios.">
+<meta name="theme-color" content="#F2E3A3">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+
+<!-- Libs (cacheadas pelo service worker para uso offline após 1ª visita) -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
+</head>
+<body>
+<section id="login-screen" class="login-screen" hidden>
+  <div class="login-shell">
+    <div class="login-visual" aria-hidden="true">
+      <div class="login-visual__halo"></div>
+      <div class="login-bottle-card">
+        <img src="icons/logo-header.png" alt="Life Sucos">
+        <div class="login-bottle-card__copy">
+          <strong>Life Sucos</strong>
+          <span>AION</span>
+        </div>
+      </div>
+      <div class="login-visual__fruit login-visual__fruit--orange"></div>
+      <div class="login-visual__fruit login-visual__fruit--leaf"></div>
+    </div>
+    <div class="login-card">
+      <div class="login-brand">
+        <img src="icons/logo-header.png" alt="Life Sucos">
+        <div>
+          <span class="login-eyebrow">Gestão de Estoque</span>
+          <h1>Life Sucos</h1>
+          <span class="login-brand__sub">A I O N</span>
+        </div>
+      </div>
+      <div class="login-copy">
+        <h2>Entrar no sistema</h2>
+        <p>Acesse sua operação com segurança e acompanhe a sua gestão com praticidade.</p>
+      </div>
+      <form id="login-form" class="login-form" autocomplete="on">
+        <div class="field">
+          <label for="login-user">Usuário</label>
+          <div class="login-control">
+            <span class="login-control__icon">👤</span>
+            <input class="input login-input" id="login-user" name="username" autocomplete="username" required placeholder="Digite seu usuário">
+          </div>
+        </div>
+        <div class="field">
+          <label for="login-password">Senha</label>
+          <div class="login-control">
+            <span class="login-control__icon">🔒</span>
+            <input class="input login-input" id="login-password" name="password" type="password" autocomplete="current-password" required placeholder="Digite sua senha">
+            <button class="login-control__toggle" id="login-password-toggle" type="button" aria-label="Mostrar senha">👁️</button>
+          </div>
+        </div>
+        <div id="login-error" class="login-error" role="alert" hidden></div>
+        <button class="btn btn--primary login-submit" id="login-submit" type="submit"><span>↪</span> Entrar</button>
+      </form>
+      <div class="login-foot">Gestão inteligente para uma operação mais leve e lucrativa · v16.2</div>
+    </div>
+  </div>
+</section>
+
+<div id="app" hidden>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar__brand">
+      <img src="icons/logo-header.png" class="logo" alt="Life Sucos">
+      <span>Controle de Estoque</span>
+    </div>
+    <nav class="nav" id="nav-list"><!-- gerado por app.js --></nav>
+    <div class="sidebar__foot">
+      <div class="version-badge">v13 · Vendas + AION</div>
+      <div id="sync-badge" data-state="online">Conectando…</div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="icon-btn hamburger" id="hamburger-btn" aria-label="Menu">☰</button>
+      <div class="topbar__headline"><span class="topbar__eyebrow">Life Sucos · AION</span><h2 id="view-title">Dashboard</h2></div>
+      <div class="search">
+        <span>🔍</span>
+        <input id="global-search" placeholder="Buscar pedido, NF, produto, cliente…" />
+      </div>
+      <div class="active-user" aria-label="Usuário conectado">
+        <div class="active-user__text">
+          <strong id="active-user-label">Operador:</strong>
+          <span id="active-user-profile"></span>
+        </div>
+        <button class="btn btn--ghost btn--sm" id="logout-btn" type="button">Sair</button>
+      </div>
+    </header>
+    <main class="view" id="view-root"><!-- telas renderizadas aqui --></main>
+  </div>
+
+  <nav class="bottom-nav" id="bottom-nav"><!-- gerado por app.js --></nav>
+</div>
+
+<div id="modal-root"></div>
+<div id="toast-wrap"></div>
+
+<script>
+  // Registro do Service Worker (funcionamento offline + instalação como app)
+  if ('serviceWorker' in navigator) {
+    let swRefreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (swRefreshing) return;
+      swRefreshing = true;
+      location.reload();
+    });
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').then(reg => reg.update()).catch(console.error);
+    });
+  }
+</script>
+<script src="js/auth.js"></script>
+<script src="js/db.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/barcode.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/nfe.js"></script>
+<script src="js/export.js"></script>
+<script src="js/views/dashboard.js"></script>
+<script src="js/views/products.js"></script>
+<script src="js/views/entries.js"></script>
+<script src="js/views/exits.js"></script>
+<script src="js/views/backlog.js"></script>
+<script src="js/views/stock.js"></script>
+<script src="js/views/inventory.js"></script>
+<script src="js/views/losses.js"></script>
+<script src="js/views/reports.js"></script>
+<script src="js/views/history.js"></script>
+<script src="js/views/users.js"></script>
+<script src="js/views/commercial.js"></script>
+<script src="js/views/invoices.js"></script>
+<script src="js/views/commercial-v10.js"></script>
+<script src="js/views/settings.js"></script>
+<script src="js/aion-ai.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

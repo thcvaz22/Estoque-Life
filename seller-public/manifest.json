@@ -1,0 +1,14 @@
+{
+  "name":"Life Vendas · AION",
+  "short_name":"Life Vendas",
+  "description":"Aplicativo comercial da Life Sucos para clientes, pedidos e relatórios.",
+  "start_url":"/vendas/",
+  "scope":"/vendas/",
+  "display":"standalone",
+  "background_color":"#F3E7A9",
+  "theme_color":"#F3E7A9",
+  "icons":[
+    {"src":"/icons/icon-192.png","sizes":"192x192","type":"image/png"},
+    {"src":"/icons/icon-512.png","sizes":"512x512","type":"image/png"}
+  ]
+}

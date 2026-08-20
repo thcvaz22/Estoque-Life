@@ -1,0 +1,220 @@
+/* ============================================================
+   SERVER/ROUTES.JS — API REST genérica
+   A partir da Etapa 3, este CRUD genérico só permite ESCRITA
+   para coleções "cadastro simples" (products, meta). Todas as
+   operações que mexem em estoque (entradas, saídas, backlog,
+   perdas, inventário, ajustes, lotes) vivem em stockRoutes.js,
+   usando o serviço em services/inventoryService.js — nunca aqui.
+   Leitura (GET) continua disponível para todas as coleções,
+   incluindo "lots" (que agora é tabela relacional própria).
+   ============================================================ */
+
+const express = require('express');
+const { db, Data, STORES, isValidStore, isGenericWritable } = require('./db');
+const { getLanUrls } = require('./network');
+const svc = require('./services/inventoryService');
+
+const router = express.Router();
+const SYSTEM_VERSION = '4.0.0';
+
+function requireManagerRoute(req, res, next) {
+  if (!req.authUser || req.authUser.perfil !== 'Gerente') {
+    return res.status(403).json({ error: 'Acesso negado — permissão de gerente necessária.', code: 'MANAGER_REQUIRED' });
+  }
+  next();
+}
+
+function currentUser(req) {
+  const u = req.authUser;
+  if (!u) return 'Usuário não autenticado';
+  return u.auditLabel || `${u.nome} (${u.username})`;
+}
+
+function appendHistory(entry) {
+  const row = { id: genId('hist'), timestamp: new Date().toISOString(), ...entry };
+  Data.upsert('history', row.id, row);
+  return row;
+}
+
+router.param('store', (req, res, next, store) => {
+  if (!isValidStore(store)) return res.status(404).json({ error: 'Coleção desconhecida: ' + store });
+  next();
+});
+
+router.get('/health', (req, res) => {
+  const httpsPort = Number(process.env.HTTPS_PORT || 3443);
+  res.json({ ok: true, time: new Date().toISOString(), systemVersion: SYSTEM_VERSION, lanUrls: getLanUrls(httpsPort, 'https') });
+});
+
+/* ---------- Lotes: leitura direta da tabela relacional ---------- */
+router.get('/lots', (req, res) => {
+  res.json(svc.listAllLots());
+});
+router.get('/lots/:id', (req, res) => {
+  const lot = db.prepare('SELECT * FROM lots WHERE id = ?').get(req.params.id);
+  if (!lot) return res.status(404).json({ error: 'não encontrado' });
+  res.json(lot);
+});
+router.put('/lots/:id', (req, res) => {
+  res.status(403).json({ error: 'Lotes não podem ser alterados diretamente. Use "Fazer ajuste de estoque" (POST /api/stock/adjust) ou edite os dados do lote em PUT /api/stock/lots/:id/meta.' });
+});
+router.delete('/lots/:id', (req, res) => {
+  res.status(403).json({ error: 'Lotes não podem ser excluídos diretamente.' });
+});
+
+/* ---------- Histórico: só é possível ANEXAR (nunca editar/apagar) ---------- */
+function genId(prefix) {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+router.post('/history', (req, res) => {
+  const b = req.body || {};
+  const entry = appendHistory({
+    usuario: currentUser(req),
+    tipo: b.tipo || null, produtoId: b.produtoId || null, produtoNome: b.produtoNome || null,
+    quantidade: b.quantidade ?? null, lote: b.lote || null, nf: b.nf || null, motivo: b.motivo || null, observacoes: b.observacoes || null
+  });
+  res.json(entry);
+});
+
+/* ---------- Produtos: bloquear exclusão física se já houve movimentação ---------- */
+function productHasMovement(productId) {
+  const lot = db.prepare('SELECT 1 FROM lots WHERE productId = ? LIMIT 1').get(productId);
+  if (lot) return true;
+  const inJson = (store, test) => Data.all(store).some(test);
+  if (inJson('entries', e => (e.itens || []).some(i => i.produtoId === productId))) return true;
+  if (inJson('exits', e => (e.nfs || []).some(nf => (nf.itens || []).some(i => i.produtoId === productId)))) return true;
+  if (inJson('losses', l => l.produtoId === productId)) return true;
+  if (inJson('backlog', b => b.produtoId === productId)) return true;
+  if (inJson('history', h => h.produtoId === productId && !['cadastro_produto', 'edicao_produto'].includes(h.tipo))) return true;
+  return false;
+}
+router.delete('/products/:id', (req, res) => {
+  const product = Data.get('products', req.params.id);
+  if (!product) return res.status(404).json({ error: 'não encontrado' });
+  if (productHasMovement(req.params.id)) {
+    return res.status(409).json({ error: 'Este produto já tem movimentações registradas e não pode ser excluído. Use "Desativar" para removê-lo das novas operações mantendo o histórico.' });
+  }
+  Data.remove('products', req.params.id);
+  appendHistory({ usuario: currentUser(req), tipo: 'exclusao', produtoId: product.id, produtoNome: product.nome, motivo: 'Produto excluído (sem movimentações anteriores)' });
+  res.status(204).end();
+});
+
+/* ---------- Backup completo (com metadados de versão) ---------- */
+router.get('/backup', requireManagerRoute, (req, res) => {
+  const dump = { version: 4, systemVersion: SYSTEM_VERSION, createdAt: new Date().toISOString() };
+  for (const store of STORES) dump[store] = Data.all(store);
+  dump.lots = svc.listAllLots();
+  res.json(dump);
+});
+
+/* ---------- Restauração — validada antes, transacional depois ---------- */
+function validateBackupShape(body) {
+  if (!body || typeof body !== 'object') return 'Arquivo de backup vazio ou inválido.';
+  if (!('version' in body)) return 'Arquivo de backup sem informação de versão — pode ser de um formato muito antigo ou incompatível.';
+  const knownKeys = [...STORES, 'lots'];
+  const hasAnyKnownArray = knownKeys.some(k => Array.isArray(body[k]));
+  if (!hasAnyKnownArray) return 'Arquivo de backup não contém nenhuma coleção reconhecida.';
+  for (const key of knownKeys) {
+    if (key in body && !Array.isArray(body[key])) return `Campo "${key}" do backup deveria ser uma lista.`;
+  }
+  return null;
+}
+router.post('/restore', requireManagerRoute, (req, res) => {
+  const body = req.body || {};
+  const problem = validateBackupShape(body);
+  if (problem) return res.status(400).json({ error: problem });
+
+  try {
+    const run = db.transaction(() => {
+      for (const store of STORES) {
+        if (!Array.isArray(body[store])) continue;
+        Data.clear(store);
+        for (const row of body[store]) {
+          const pk = row && (row.id ?? row.key);
+          if (!pk) continue;
+          Data.upsert(store, String(pk), row);
+        }
+      }
+      if (Array.isArray(body.lots)) {
+        db.exec('DELETE FROM lots');
+        const insert = db.prepare(`INSERT INTO lots (id, productId, lote, fabricacao, validade, quantidadeDisponivel, quantidadeBloqueada, localizacao, updatedAt) VALUES (?,?,?,?,?,?,?,?,?)`);
+        const now = new Date().toISOString();
+        for (const l of body.lots) {
+          if (!l.id || !l.productId) continue;
+          insert.run(l.id, l.productId, l.lote || 'SEM-LOTE', l.fabricacao || null, l.validade || null,
+            Math.max(0, Number(l.quantidadeDisponivel) || 0), Math.max(0, Number(l.quantidadeBloqueada) || 0), l.localizacao || '', l.updatedAt || now);
+        }
+      }
+    });
+    run();
+    appendHistory({ usuario: currentUser(req), tipo: 'restauracao_backup', motivo: 'Backup restaurado pelo usuário autenticado' });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Falha ao restaurar: ' + err.message + ' — nenhum dado foi alterado (a restauração é tudo-ou-nada).' });
+  }
+});
+
+/* ---------- CRUD genérico (products, meta = escrita; demais = só leitura) ---------- */
+router.get('/:store', (req, res) => {
+  res.json(Data.all(req.params.store));
+});
+
+router.get('/:store/:id', (req, res) => {
+  const obj = Data.get(req.params.store, req.params.id);
+  if (obj === null) return res.status(404).json({ error: 'não encontrado' });
+  res.json(obj);
+});
+
+router.put('/:store/:id', (req, res) => {
+  if (req.params.store === 'meta' && (!req.authUser || req.authUser.perfil !== 'Gerente')) {
+    return res.status(403).json({ error: 'Acesso negado — permissão de gerente necessária para alterar configurações.', code: 'MANAGER_REQUIRED' });
+  }
+  if (!isGenericWritable(req.params.store)) {
+    return res.status(403).json({ error: `A coleção "${req.params.store}" não pode ser alterada diretamente. Use os endpoints específicos em /api/stock/*.` });
+  }
+  if (!req.body || typeof req.body !== 'object') return res.status(400).json({ error: 'corpo inválido' });
+  const before = Data.get(req.params.store, req.params.id);
+  const payload = { ...req.body };
+  if (['products', 'customers', 'suppliers'].includes(req.params.store)) {
+    payload.ultimoAlteradoPor = currentUser(req);
+    payload.responsavel = currentUser(req);
+  }
+  const saved = Data.upsert(req.params.store, req.params.id, payload);
+  if (req.params.store === 'products') {
+    appendHistory({
+      usuario: currentUser(req),
+      tipo: before ? 'edicao_produto' : 'cadastro_produto',
+      produtoId: saved.id || req.params.id,
+      produtoNome: saved.nome || '',
+      motivo: before ? 'Produto alterado' : 'Produto cadastrado'
+    });
+  }
+  if (req.params.store === 'customers') {
+    appendHistory({
+      usuario: currentUser(req),
+      tipo: before ? 'edicao_cliente' : 'cadastro_cliente',
+      motivo: `${before ? 'Cliente alterado' : 'Cliente cadastrado'}: ${saved.nome || saved.razaoSocial || saved.id}`
+    });
+  }
+  if (req.params.store === 'suppliers') {
+    appendHistory({
+      usuario: currentUser(req),
+      tipo: before ? 'edicao_fornecedor' : 'cadastro_fornecedor',
+      motivo: `${before ? 'Fornecedor alterado' : 'Fornecedor cadastrado'}: ${saved.nome || saved.razaoSocial || saved.id}`
+    });
+  }
+  res.json(saved);
+});
+
+router.delete('/:store/:id', (req, res) => {
+  if (req.params.store === 'meta' && (!req.authUser || req.authUser.perfil !== 'Gerente')) {
+    return res.status(403).json({ error: 'Acesso negado — permissão de gerente necessária para alterar configurações.', code: 'MANAGER_REQUIRED' });
+  }
+  if (!isGenericWritable(req.params.store)) {
+    return res.status(403).json({ error: `A coleção "${req.params.store}" não pode ser alterada diretamente.` });
+  }
+  Data.remove(req.params.store, req.params.id);
+  res.status(204).end();
+});
+
+module.exports = router;

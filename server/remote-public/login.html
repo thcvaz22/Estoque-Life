@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Life Sucos · Painel do Gerente</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="login-body">
+  <div class="login-card">
+    <h1>🧃 Life Sucos</h1>
+    <p class="subtitle">Painel do Gerente · acompanhamento remoto</p>
+    <form id="login-form">
+      <label>Usuário</label>
+      <input type="text" id="username" autocomplete="username" required autofocus>
+      <label>Senha</label>
+      <input type="password" id="password" autocomplete="current-password" required>
+      <button type="submit" id="login-btn">Entrar</button>
+      <p id="login-error" class="error" hidden></p>
+    </form>
+    <p class="hint">Este painel é somente para consulta — nenhuma alteração de estoque pode ser feita por aqui.</p>
+  </div>
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('login-btn');
+  const errorEl = document.getElementById('login-error');
+  errorEl.hidden = true;
+  btn.disabled = true;
+  btn.textContent = 'Entrando…';
+  try {
+    const res = await fetch('/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: document.getElementById('username').value, password: document.getElementById('password').value })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Não foi possível entrar.');
+    window.location.href = '/';
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.hidden = false;
+    btn.disabled = false;
+    btn.textContent = 'Entrar';
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,480 @@
+/* ============================================================
+   SERVER/AUTH.JS — autenticação, sessões e gestão de usuários
+
+   - Senhas: scrypt + salt (nunca texto puro).
+   - Sessões opacas em SQLite (12 horas), cookie HttpOnly.
+   - Identidade de auditoria resolvida no servidor.
+   - Gestão de usuários e permissões administrativas somente para
+     perfil Gerente, com proteção também no backend.
+   ============================================================ */
+
+const crypto = require('crypto');
+const express = require('express');
+const { db, Data } = require('./db');
+
+const COOKIE_NAME = 'ls_sessao';
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const LOGIN_WINDOW_MS = 5 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 10;
+const ALLOWED_PROFILES = ['Gerente', 'Operador', 'Vendedor'];
+
+// Usuários iniciais. As senhas não ficam gravadas em texto puro.
+const DEFAULT_USERS = [
+  {
+    id: 'user_admin', username: 'admin', nome: 'Administrador', perfil: 'Gerente',
+    salt: '28dc947a6f261bf04b4bea87baccc1b4',
+    hash: '8c66e0dac0455cd51cfeb800a8dfaf81247d8bc81398b5d029c275e3b49b28e5f5d6ff9f2e8b445640eaf52f1e5d394beea5d47e1033b7e1e03e36d86e5b1754'
+  },
+  {
+    id: 'user_operador', username: 'operador', nome: 'Operador', perfil: 'Operador',
+    salt: 'e923fa2f1bb8b6ee52f0961b915aed0b',
+    hash: '37a4eb7bb64af5dec86fd4c97cdc53a7679b1eb48469d1d829ec8e493a52cb3ae008c028a762b61858c1b5b542b98c4e38c08f5344a2518d87260bc1416f04d3'
+  }
+];
+
+const loginAttempts = new Map();
+
+function tableColumns(name) {
+  try { return db.prepare(`PRAGMA table_info(${name})`).all().map(c => c.name); }
+  catch { return []; }
+}
+
+function tableExists(name) {
+  return !!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(name);
+}
+
+function ensureAuthSchema() {
+  // Migração defensiva: versões anteriores do Life podem ter deixado tabelas
+  // users/sessions com estrutura diferente. CREATE TABLE IF NOT EXISTS não
+  // corrige esse caso e o login pode falhar só depois de validar a senha.
+  const usersRequired = ['id','username','nome','perfil','passwordSalt','passwordHash','ativo','createdAt','updatedAt'];
+  const sessionsRequired = ['tokenHash','userId','createdAt','expiresAt'];
+
+  if (tableExists('users')) {
+    const cols = tableColumns('users');
+    if (!usersRequired.every(c => cols.includes(c))) {
+      const legacy = `users_legacy_${Date.now()}`;
+      db.exec(`ALTER TABLE users RENAME TO ${legacy}`);
+      console.warn(`   [auth] Estrutura antiga de usuários preservada em ${legacy}; criando schema atual.`);
+    }
+  }
+  if (tableExists('sessions')) {
+    const cols = tableColumns('sessions');
+    if (!sessionsRequired.every(c => cols.includes(c))) {
+      const legacy = `sessions_legacy_${Date.now()}`;
+      db.exec(`ALTER TABLE sessions RENAME TO ${legacy}`);
+      console.warn(`   [auth] Estrutura antiga de sessões preservada em ${legacy}; criando schema atual.`);
+    }
+  }
+
+  db.exec(`CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    nome TEXT NOT NULL,
+    perfil TEXT NOT NULL,
+    passwordSalt TEXT NOT NULL,
+    passwordHash TEXT NOT NULL,
+    ativo INTEGER NOT NULL DEFAULT 1 CHECK (ativo IN (0,1)),
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS sessions (
+    tokenHash TEXT PRIMARY KEY,
+    userId TEXT NOT NULL,
+    createdAt TEXT NOT NULL,
+    expiresAt TEXT NOT NULL,
+    FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(userId)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expiresAt)');
+
+  const now = new Date().toISOString();
+  const insert = db.prepare(`INSERT OR IGNORE INTO users
+    (id, username, nome, perfil, passwordSalt, passwordHash, ativo, createdAt, updatedAt)
+    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`);
+  for (const u of DEFAULT_USERS) {
+    insert.run(u.id, u.username, u.nome, u.perfil, u.salt, u.hash, now, now);
+  }
+
+  // Correção única de implantação (v3): garante uma credencial administrativa
+  // conhecida mesmo quando um banco antigo já possuía "admin" com senha/hash
+  // de uma versão anterior. Não apaga estoque, pedidos, clientes ou histórico.
+  // Depois desta migração, alterações de senha feitas pelo gerente são preservadas.
+  const repairId = 'auth_default_credentials_v3';
+  const repaired = Data.get('meta', repairId);
+  if (!repaired) {
+    const tx = db.transaction(() => {
+      for (const u of DEFAULT_USERS) {
+        const existing = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(u.username);
+        if (existing) {
+          db.prepare(`UPDATE users SET passwordSalt = ?, passwordHash = ?, perfil = ?, ativo = 1, updatedAt = ? WHERE id = ?`)
+            .run(u.salt, u.hash, u.perfil, now, existing.id);
+        } else {
+          insert.run(u.id, u.username, u.nome, u.perfil, u.salt, u.hash, now, now);
+        }
+      }
+      // Sessões antigas podem ter sido criadas com cookies de versões anteriores.
+      db.prepare('DELETE FROM sessions').run();
+      Data.upsert('meta', repairId, { id: repairId, appliedAt: now, version: 3 });
+    });
+    tx();
+    console.log('   [auth] Credenciais padrão verificadas/reparadas uma única vez.');
+  }
+
+  sweepExpiredSessions();
+}
+
+function hashToken(token) {
+  return crypto.createHash('sha256').update(String(token || '')).digest('hex');
+}
+
+function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+  const clean = String(password || '');
+  if (clean.length < 6) throw Object.assign(new Error('A senha deve ter pelo menos 6 caracteres.'), { status: 400 });
+  return { salt, hash: crypto.scryptSync(clean, salt, 64).toString('hex') };
+}
+
+function verifyPassword(password, salt, expectedHash) {
+  if (!password || !salt || !expectedHash) return false;
+  const calculated = crypto.scryptSync(String(password), salt, 64);
+  const expected = Buffer.from(expectedHash, 'hex');
+  return expected.length === calculated.length && crypto.timingSafeEqual(expected, calculated);
+}
+
+function publicUser(row, { includeStatus = false } = {}) {
+  if (!row) return null;
+  const out = {
+    id: row.id,
+    username: row.username,
+    nome: row.nome,
+    perfil: row.perfil,
+    auditLabel: `${row.nome} (${row.username})`
+  };
+  if (includeStatus) {
+    out.ativo = Number(row.ativo) === 1;
+    out.createdAt = row.createdAt || null;
+    out.updatedAt = row.updatedAt || null;
+  }
+  return out;
+}
+
+function authenticate(username, password) {
+  const row = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE AND ativo = 1').get(String(username || '').trim());
+  if (!row || !verifyPassword(password, row.passwordSalt, row.passwordHash)) return null;
+  return publicUser(row);
+}
+
+function createSession(userId) {
+  sweepExpiredSessions();
+  const token = crypto.randomBytes(32).toString('hex');
+  const now = new Date();
+  const expires = new Date(now.getTime() + SESSION_TTL_MS);
+  db.prepare('INSERT INTO sessions (tokenHash, userId, createdAt, expiresAt) VALUES (?, ?, ?, ?)')
+    .run(hashToken(token), userId, now.toISOString(), expires.toISOString());
+  return { token, expiresAt: expires };
+}
+
+function getSessionUser(token) {
+  if (!token) return null;
+  const now = new Date().toISOString();
+  const row = db.prepare(`SELECT u.id, u.username, u.nome, u.perfil, u.ativo, u.createdAt, u.updatedAt, s.expiresAt
+    FROM sessions s JOIN users u ON u.id = s.userId
+    WHERE s.tokenHash = ? AND s.expiresAt > ? AND u.ativo = 1`).get(hashToken(token), now);
+  return publicUser(row);
+}
+
+function destroySession(token) {
+  if (!token) return;
+  db.prepare('DELETE FROM sessions WHERE tokenHash = ?').run(hashToken(token));
+}
+
+function destroyUserSessions(userId) {
+  db.prepare('DELETE FROM sessions WHERE userId = ?').run(userId);
+}
+
+function sweepExpiredSessions() {
+  db.prepare('DELETE FROM sessions WHERE expiresAt <= ?').run(new Date().toISOString());
+}
+
+function parseCookies(header) {
+  const out = {};
+  if (!header) return out;
+  for (const part of header.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx < 0) continue;
+    const key = part.slice(0, idx).trim();
+    const raw = part.slice(idx + 1).trim();
+    try { out[key] = decodeURIComponent(raw); } catch { out[key] = raw; }
+  }
+  return out;
+}
+
+function requestToken(req) {
+  return parseCookies(req.headers.cookie)[COOKIE_NAME] || null;
+}
+
+function isHttpsRequest(req) {
+  return !!(req.secure || String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https');
+}
+
+function setSessionCookie(req, res, token) {
+  const parts = [
+    `${COOKIE_NAME}=${encodeURIComponent(token)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${Math.floor(SESSION_TTL_MS / 1000)}`
+  ];
+  if (isHttpsRequest(req)) parts.push('Secure');
+  res.setHeader('Set-Cookie', parts.join('; '));
+}
+
+function clearSessionCookie(req, res) {
+  const parts = [`${COOKIE_NAME}=`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Max-Age=0'];
+  if (isHttpsRequest(req)) parts.push('Secure');
+  res.setHeader('Set-Cookie', parts.join('; '));
+}
+
+function requireAuth(req, res, next) {
+  const user = getSessionUser(requestToken(req));
+  if (!user) return res.status(401).json({ error: 'Sessão expirada ou inválida. Faça login novamente.', code: 'AUTH_REQUIRED' });
+  req.authUser = user;
+  next();
+}
+
+function requireManager(req, res, next) {
+  if (!req.authUser || req.authUser.perfil !== 'Gerente') {
+    return res.status(403).json({ error: 'Acesso negado — permissão de gerente necessária.', code: 'MANAGER_REQUIRED' });
+  }
+  next();
+}
+
+function requireOperational(req, res, next) {
+  if (!req.authUser || !['Gerente','Operador'].includes(req.authUser.perfil)) {
+    return res.status(403).json({ error: 'Acesso restrito à equipe operacional.', code: 'OPERATIONAL_REQUIRED' });
+  }
+  next();
+}
+
+function isRateLimited(ip) {
+  const now = Date.now();
+  const e = loginAttempts.get(ip);
+  if (!e || now - e.windowStart > LOGIN_WINDOW_MS) {
+    loginAttempts.set(ip, { count: 0, windowStart: now });
+    return false;
+  }
+  return e.count >= LOGIN_MAX_ATTEMPTS;
+}
+function registerFailure(ip) {
+  const now = Date.now();
+  const e = loginAttempts.get(ip);
+  if (!e || now - e.windowStart > LOGIN_WINDOW_MS) loginAttempts.set(ip, { count: 1, windowStart: now });
+  else e.count += 1;
+}
+function clearFailures(ip) { loginAttempts.delete(ip); }
+
+function genId(prefix) {
+  return `${prefix}_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
+}
+
+function auditUserAction(actor, tipo, target, motivo, observacoes = '') {
+  const id = genId('hist');
+  const row = {
+    id,
+    timestamp: new Date().toISOString(),
+    usuario: actor.auditLabel || `${actor.nome} (${actor.username})`,
+    tipo,
+    produtoId: null,
+    produtoNome: target ? `${target.nome} (${target.username})` : null,
+    quantidade: null,
+    lote: null,
+    nf: null,
+    motivo,
+    observacoes
+  };
+  Data.upsert('history', id, row);
+  return row;
+}
+
+function validateUsername(username) {
+  const value = String(username || '').trim();
+  if (value.length < 3 || value.length > 40) throw Object.assign(new Error('O usuário deve ter entre 3 e 40 caracteres.'), { status: 400 });
+  if (!/^[a-zA-Z0-9._-]+$/.test(value)) throw Object.assign(new Error('Use apenas letras, números, ponto, hífen ou sublinhado no usuário.'), { status: 400 });
+  return value;
+}
+
+function validateName(nome) {
+  const value = String(nome || '').trim();
+  if (value.length < 2 || value.length > 80) throw Object.assign(new Error('Informe um nome válido.'), { status: 400 });
+  return value;
+}
+
+function validateProfile(perfil) {
+  const value = String(perfil || 'Operador').trim();
+  if (!ALLOWED_PROFILES.includes(value)) throw Object.assign(new Error('Perfil inválido.'), { status: 400 });
+  return value;
+}
+
+function countActiveManagersExcluding(userId = null) {
+  if (userId) return db.prepare(`SELECT COUNT(*) AS n FROM users WHERE ativo = 1 AND perfil = 'Gerente' AND id <> ?`).get(userId).n;
+  return db.prepare(`SELECT COUNT(*) AS n FROM users WHERE ativo = 1 AND perfil = 'Gerente'`).get().n;
+}
+
+function createAuthRouter() {
+  const router = express.Router();
+
+  router.post('/login', (req, res) => {
+    const ip = req.ip || req.socket?.remoteAddress || 'desconhecido';
+    try {
+      if (isRateLimited(ip)) return res.status(429).json({ error: 'Muitas tentativas de login. Aguarde alguns minutos e tente novamente.' });
+      const { username, password } = req.body || {};
+      if (!username || !password) return res.status(400).json({ error: 'Informe usuário e senha.' });
+      const user = authenticate(username, password);
+      if (!user) {
+        registerFailure(ip);
+        return res.status(401).json({ error: 'Usuário ou senha incorretos.' });
+      }
+      clearFailures(ip);
+      const { token } = createSession(user.id);
+      setSessionCookie(req, res, token);
+      res.json({ ok: true, user });
+    } catch (err) {
+      console.error('[auth] Falha ao efetuar login:', err && (err.stack || err.message || err));
+      res.status(500).json({ error: 'Falha interna ao autenticar. Reinicie o Life Sucos; se persistir, use o atalho Resetar Admin.' });
+    }
+  });
+
+  router.get('/me', (req, res) => {
+    const user = getSessionUser(requestToken(req));
+    if (!user) return res.status(401).json({ error: 'Sessão não autenticada.', code: 'AUTH_REQUIRED' });
+    res.json({ user });
+  });
+
+  router.post('/logout', (req, res) => {
+    destroySession(requestToken(req));
+    clearSessionCookie(req, res);
+    res.json({ ok: true });
+  });
+
+  return router;
+}
+
+function createUserRouter() {
+  const router = express.Router();
+
+  // Esta rota inteira é montada no app com requireAuth + requireManager.
+  router.get('/', (req, res) => {
+    const rows = db.prepare('SELECT * FROM users ORDER BY ativo DESC, perfil ASC, nome COLLATE NOCASE ASC').all();
+    res.json(rows.map(r => publicUser(r, { includeStatus: true })));
+  });
+
+  router.post('/', (req, res) => {
+    try {
+      const body = req.body || {};
+      const nome = validateName(body.nome);
+      const username = validateUsername(body.username);
+      const perfil = validateProfile(body.perfil || 'Operador');
+      const password = String(body.password || '');
+      const exists = db.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(username);
+      if (exists) return res.status(409).json({ error: 'Já existe um usuário com esse login.' });
+      const { salt, hash } = hashPassword(password);
+      const now = new Date().toISOString();
+      const id = genId('user');
+      db.prepare(`INSERT INTO users (id, username, nome, perfil, passwordSalt, passwordHash, ativo, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`).run(id, username, nome, perfil, salt, hash, now, now);
+      const created = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+      auditUserAction(req.authUser, 'usuario_cadastrado', created, `Usuário ${perfil.toLowerCase()} cadastrado`, `Novo login: ${username}`);
+      res.status(201).json(publicUser(created, { includeStatus: true }));
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message || 'Não foi possível cadastrar o usuário.' });
+    }
+  });
+
+  router.put('/:id', (req, res) => {
+    try {
+      const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+      if (!existing) return res.status(404).json({ error: 'Usuário não encontrado.' });
+      const body = req.body || {};
+      const nome = validateName(body.nome ?? existing.nome);
+      const username = validateUsername(body.username ?? existing.username);
+      const perfil = validateProfile(body.perfil ?? existing.perfil);
+      const duplicate = db.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE AND id <> ?').get(username, existing.id);
+      if (duplicate) return res.status(409).json({ error: 'Já existe outro usuário com esse login.' });
+      if (existing.perfil === 'Gerente' && perfil !== 'Gerente' && Number(existing.ativo) === 1 && countActiveManagersExcluding(existing.id) === 0) {
+        return res.status(409).json({ error: 'Não é possível remover o perfil do último gerente ativo do sistema.' });
+      }
+      const now = new Date().toISOString();
+      db.prepare('UPDATE users SET username = ?, nome = ?, perfil = ?, updatedAt = ? WHERE id = ?').run(username, nome, perfil, now, existing.id);
+      const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(existing.id);
+      auditUserAction(req.authUser, 'usuario_editado', updated, 'Cadastro de usuário alterado', `Antes: ${existing.nome} (${existing.username}) · ${existing.perfil}; Depois: ${nome} (${username}) · ${perfil}`);
+      res.json(publicUser(updated, { includeStatus: true }));
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message || 'Não foi possível alterar o usuário.' });
+    }
+  });
+
+  router.post('/:id/reset-password', (req, res) => {
+    try {
+      const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+      if (!existing) return res.status(404).json({ error: 'Usuário não encontrado.' });
+      const { salt, hash } = hashPassword(req.body?.password);
+      const now = new Date().toISOString();
+      db.prepare('UPDATE users SET passwordSalt = ?, passwordHash = ?, updatedAt = ? WHERE id = ?').run(salt, hash, now, existing.id);
+      destroyUserSessions(existing.id);
+      auditUserAction(req.authUser, 'senha_redefinida', existing, 'Senha redefinida pelo gerente');
+      res.json({ ok: true, selfSessionInvalidated: existing.id === req.authUser.id });
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message || 'Não foi possível redefinir a senha.' });
+    }
+  });
+
+  router.post('/:id/deactivate', (req, res) => {
+    const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    if (existing.id === req.authUser.id) return res.status(409).json({ error: 'Você não pode desativar o próprio usuário enquanto está conectado.' });
+    if (Number(existing.ativo) !== 1) return res.json(publicUser(existing, { includeStatus: true }));
+    if (existing.perfil === 'Gerente' && countActiveManagersExcluding(existing.id) === 0) {
+      return res.status(409).json({ error: 'Não é possível desativar o último gerente ativo do sistema.' });
+    }
+    const now = new Date().toISOString();
+    db.prepare('UPDATE users SET ativo = 0, updatedAt = ? WHERE id = ?').run(now, existing.id);
+    destroyUserSessions(existing.id);
+    const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(existing.id);
+    auditUserAction(req.authUser, 'usuario_desativado', updated, 'Usuário desativado', 'O histórico anterior do usuário foi preservado.');
+    res.json(publicUser(updated, { includeStatus: true }));
+  });
+
+  router.post('/:id/activate', (req, res) => {
+    const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Usuário não encontrado.' });
+    const now = new Date().toISOString();
+    db.prepare('UPDATE users SET ativo = 1, updatedAt = ? WHERE id = ?').run(now, existing.id);
+    const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(existing.id);
+    auditUserAction(req.authUser, 'usuario_reativado', updated, 'Usuário reativado');
+    res.json(publicUser(updated, { includeStatus: true }));
+  });
+
+  return router;
+}
+
+ensureAuthSchema();
+setInterval(sweepExpiredSessions, 30 * 60 * 1000).unref();
+
+module.exports = {
+  COOKIE_NAME,
+  ALLOWED_PROFILES,
+  ensureAuthSchema,
+  authenticate,
+  hashPassword,
+  createSession,
+  getSessionUser,
+  destroySession,
+  requireAuth,
+  requireManager,
+  requireOperational,
+  createAuthRouter,
+  createUserRouter,
+  parseCookies,
+  requestToken,
+  publicUser
+};

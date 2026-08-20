@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Life Sucos · Painel do Gerente</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>🧃 Life Sucos <span>Painel do Gerente</span></h1>
+    <div class="status-area">
+      <span id="status-badge" class="badge badge--online">Conectando…</span>
+      <span id="last-update" class="last-update">—</span>
+      <button id="logout-btn" class="btn-ghost">Sair</button>
+    </div>
+  </header>
+
+  <main id="content">
+    <div class="grid stats" id="stats-grid"></div>
+
+    <section class="panel">
+      <h2>Motoristas em rota</h2>
+      <div class="table-wrap"><table id="tbl-motoristas"><thead><tr><th>Motorista</th><th>Cliente</th><th>Placa</th><th>NFs</th><th>Saída</th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <div class="two-col">
+      <section class="panel">
+        <h2>Produtos com estoque baixo</h2>
+        <div class="table-wrap"><table id="tbl-baixo"><thead><tr><th>Produto</th><th>Disponível</th><th>Mínimo</th></tr></thead><tbody></tbody></table></div>
+      </section>
+      <section class="panel">
+        <h2>Produtos zerados</h2>
+        <div class="table-wrap"><table id="tbl-zerados"><thead><tr><th>Produto</th></tr></thead><tbody></tbody></table></div>
+      </section>
+    </div>
+
+    <div class="two-col">
+      <section class="panel">
+        <h2>Próximos do vencimento</h2>
+        <div class="table-wrap"><table id="tbl-vencimento"><thead><tr><th>Produto</th><th>Lote</th><th>Validade</th><th>Dias</th><th>Qtd.</th></tr></thead><tbody></tbody></table></div>
+      </section>
+      <section class="panel">
+        <h2>Backlog pendente</h2>
+        <div class="table-wrap"><table id="tbl-backlog"><thead><tr><th>Produto</th><th>Qtd.</th><th>Cliente</th><th>NF</th><th>Motivo</th></tr></thead><tbody></tbody></table></div>
+      </section>
+    </div>
+
+    <div class="two-col">
+      <section class="panel">
+        <h2>Avarias e perdas recentes</h2>
+        <div class="table-wrap"><table id="tbl-avarias"><thead><tr><th>Produto</th><th>Qtd.</th><th>Motivo</th><th>Data</th></tr></thead><tbody></tbody></table></div>
+      </section>
+      <section class="panel">
+        <h2>Últimas movimentações</h2>
+        <div class="table-wrap"><table id="tbl-historico"><thead><tr><th>Quando</th><th>Tipo</th><th>Produto</th><th>Qtd.</th><th>Usuário</th></tr></thead><tbody></tbody></table></div>
+      </section>
+    </div>
+  </main>
+
+<script src="dashboard.js"></script>
+</body>
+</html>

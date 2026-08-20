@@ -1,0 +1,32 @@
+{
+  "name": "Life Sucos · Controle de Estoque",
+  "short_name": "Life Sucos",
+  "description": "Sistema de gestão de estoque para a Life Sucos — entradas, saídas, backlog, inventário e relatórios.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F2E3A3",
+  "theme_color": "#F2E3A3",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
