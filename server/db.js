@@ -144,7 +144,7 @@ const Data = {
 };
 
 function seedIfNewDatabase() {
-  const { makeCatalog } = require('./catalog');
+  const { makeCatalog, productNameWithVolume, volumeToMl } = require('./catalog');
   const now = new Date().toISOString();
   const existing = Data.all('products');
   const byCode = new Map(existing.filter(p => p.codigoInterno).map(p => [String(p.codigoInterno), p]));
@@ -157,6 +157,24 @@ function seedIfNewDatabase() {
     inserted++;
   }
   if (inserted) console.log(`   [catálogo] ${inserted} produto(s) Life Sucos adicionado(s), todos com estoque inicial zerado.`);
+
+  // v17.1 — padronização visual do catálogo. O código/ID do produto nunca é
+  // alterado: apenas acrescentamos a litragem convertida para ml ao nome dos
+  // produtos oficiais já existentes. Isso preserva lotes, estoque, histórico,
+  // preços e pedidos vinculados por produtoId.
+  const officialByCode = new Map(makeCatalog(now).map(p => [String(p.codigoInterno), p]));
+  let renamedWithMl = 0;
+  for (const current of existing) {
+    const official = officialByCode.get(String(current.codigoInterno || ''));
+    if (!official) continue;
+    const desiredName = productNameWithVolume(current.nome || official.nome, official.volume);
+    const desiredMl = volumeToMl(official.volume);
+    let changed = false;
+    if (desiredName && current.nome !== desiredName) { current.nome = desiredName; changed = true; }
+    if (desiredMl && Number(current.volumeMl || 0) !== desiredMl) { current.volumeMl = desiredMl; changed = true; }
+    if (changed) { Data.upsert('products', current.id, current); renamedWithMl++; }
+  }
+  if (renamedWithMl) console.log(`   [catálogo v17.1] ${renamedWithMl} produto(s) padronizado(s) com volume em ml no nome.`);
 
   // Aproveita dados já existentes para montar catálogos simples de clientes
   // e fornecedores usados pela AION IA e pelos campos com sugestão automática.

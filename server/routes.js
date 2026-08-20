@@ -19,7 +19,7 @@ const { createDatabaseBackup } = require('./cloudBackup');
 const { searchAll } = require('./globalSearch');
 
 const router = express.Router();
-const SYSTEM_VERSION = '17.0.0-neon-primary-render-free-aion-1.1';
+const SYSTEM_VERSION = '17.1.0-neon-primary-render-free-aion-1.1';
 const { getCloudPersistenceStatus } = require('./cloudPersistence');
 
 

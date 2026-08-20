@@ -30,7 +30,7 @@ function friendlyListenError(err,port,label){
 function printBanner({ isNewDatabase, publicBaseUrl }){
   console.log('');
   console.log('════════════════════════════════════════════════════════');
-  console.log('   LIFE SUCOS · AION — v17 · Neon Primary + Render Free');
+  console.log('   LIFE SUCOS · AION — v17.1 · Neon Primary + Render Free');
   console.log('════════════════════════════════════════════════════════');
   if(isNewDatabase) console.log('   Cache local criado nesta execução.');
   if(CLOUD_MODE){
@@ -130,7 +130,7 @@ function startHttps(app){
 }
 
 main().catch(err=>{
-  console.error('\n[ERRO FATAL] Não foi possível iniciar o Life Sucos v17:', err.message);
+  console.error('\n[ERRO FATAL] Não foi possível iniciar o Life Sucos v17.1:', err.message);
   if(err.stack) console.error(err.stack);
   process.exit(1);
 });

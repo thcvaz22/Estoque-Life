@@ -19,18 +19,41 @@ function logisticsFor(volume, embalagem) {
   return { unidadesPorFardo: 1, fardosPorPalete: null, nomeFardo: 'Fardo' };
 }
 
+function volumeToMl(volume) {
+  const raw = String(volume || '').trim().toLowerCase().replace(',', '.');
+  const compact = raw.replace(/\s+/g, '');
+  let m = compact.match(/^(\d+(?:\.\d+)?)ml$/i);
+  if (m) return Math.round(Number(m[1]));
+  m = compact.match(/^(\d+(?:\.\d+)?)l$/i);
+  if (m) return Math.round(Number(m[1]) * 1000);
+  return null;
+}
+
+function productNameWithVolume(nome, volume) {
+  const clean = String(nome || '').trim();
+  const ml = volumeToMl(volume);
+  if (!clean || !ml) return clean;
+  // Remove uma medida já existente no fim do nome (300 ml, 1,5 L etc.)
+  // e reaplica tudo em ml. Assim a função é idempotente e o catálogo fica
+  // consistente em entradas, saídas e pedidos.
+  const base = clean.replace(/\s+\d+(?:[.,]\d+)?\s*(?:ml|l)\s*$/i, '').trim();
+  return `${base} ${ml} ml`;
+}
+
 function makeCatalog(now = new Date().toISOString()) {
   return PRODUCTS.map(([codigoInterno, nome, embalagem, volume]) => {
     const lg = logisticsFor(volume, embalagem);
     const sabor = nome.replace(/^Suco de /, '').replace(/^Néctar de /, '').replace(/^Limonada$/, 'Limão');
+    const volumeMl = volumeToMl(volume);
     return {
       id: `life_${codigoInterno}`,
       codigoInterno,
       codigoBarras: '',
-      nome,
+      nome: productNameWithVolume(nome, volume),
       marca: 'Life',
       sabor,
       volume,
+      volumeMl,
       embalagem,
       unidadeBase: 'Unidade',
       nomeFardo: lg.nomeFardo,
@@ -77,4 +100,4 @@ function toBaseUnits(product, quantity, unit) {
   return q * movementFactor(product, unit);
 }
 
-module.exports = { makeCatalog, logisticsFor, normalizeMovementUnit, movementFactor, toBaseUnits };
+module.exports = { makeCatalog, logisticsFor, volumeToMl, productNameWithVolume, normalizeMovementUnit, movementFactor, toBaseUnits };
