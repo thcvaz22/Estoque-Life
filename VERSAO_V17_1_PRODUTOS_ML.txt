@@ -1,0 +1,14 @@
+LIFE SUCOS | AION — v17.1.0
+
+Correção operacional: identificação clara de produtos por volume.
+
+- Catálogo Life exibe o volume junto ao nome em mililitros.
+  Exemplos: Suco de Laranja 300 ml, Suco de Laranja 900 ml,
+  Suco de Laranja 1500 ml, Suco de Laranja 2500 ml,
+  Suco de Laranja 3500 ml e Suco de Laranja 5000 ml.
+- "Vincular a produto existente" mostra código + descrição + ml + embalagem.
+- Pedidos e saídas seguem a mesma identificação clara.
+- Novos produtos com volume informado passam a salvar o volume no nome em ml.
+- IDs, códigos, lotes, estoque e vínculos históricos não são alterados.
+- Instalações existentes recebem a padronização automaticamente no startup.
+- Neon continua sendo a persistência autoritativa no modo cloud.

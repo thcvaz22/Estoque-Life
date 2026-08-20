@@ -1,4 +1,4 @@
-# Life Sucos | AION — v17
+# Life Sucos | AION — v17.1
 
 Ecossistema de operação, estoque, vendas remotas, notas fiscais, relatórios e Sistema de Inteligência AION.
 
@@ -137,3 +137,7 @@ No boot, o estado é restaurado Neon → cache. Em cada operação de escrita, a
 O `render.yaml` usa `plan: free`, não cria disco e gera `AUTH_SIGNING_SECRET` automaticamente. Os segredos `DATABASE_URL`, `OPENAI_API_KEY` e `BOOTSTRAP_ADMIN_PASSWORD` continuam fora do GitHub.
 
 O modo local continua funcionando com SQLite persistente na pasta `data/` como contingência.
+
+## v17.1 — identificação de produtos por volume
+
+O catálogo e os fluxos operacionais passaram a exibir o volume diretamente no nome do produto em mililitros. A padronização é aplicada automaticamente aos produtos oficiais existentes sem alterar IDs, códigos ou vínculos de estoque. O seletor de vínculo manual de entrada mostra código, descrição, volume e embalagem para reduzir erros entre apresentações do mesmo sabor.

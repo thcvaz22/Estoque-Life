@@ -1,7 +1,7 @@
 {
   "name": "life-sucos-sistema",
-  "version": "17.0.0",
-  "description": "Ecossistema Life Sucos — Render Free com Neon como persistência autoritativa, cache transacional efêmero, AION Online e AION Official Skill v1.1.",
+  "version": "17.1.0",
+  "description": "Ecossistema Life Sucos — v17.1 com Neon como persistência autoritativa, identificação de produtos com volume em ml, AION Online e AION Official Skill v1.1.",
   "private": true,
   "main": "server/index.js",
   "scripts": {
