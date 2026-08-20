@@ -197,7 +197,7 @@ async function openOperationalOrderForm() {
 
     <div class="section-title">Adicionar itens</div>
     <div class="form-grid form-grid--3">
-      <div class="field"><label>Produto</label><select class="input" id="oo-product"><option value="">Selecione…</option>${stock.map(p=>`<option value="${p.id}">${escapeHTML(p.codigoInterno || '')} · ${escapeHTML(p.nome)} · ${fmtNumber(p.disponivel)} un.</option>`).join('')}</select></div>
+      <div class="field"><label>Produto</label><select class="input" id="oo-product"><option value="">Selecione…</option>${stock.map(p=>`<option value="${p.id}">${escapeHTML(productSelectLabel(p, { includeCode:true }))} · ${fmtNumber(p.disponivel)} un.</option>`).join('')}</select></div>
       <div class="field"><label>Quantidade</label><input class="input" id="oo-qty" type="number" min="1" value="1"></div>
       <div class="field"><label>Unidade</label><select class="input" id="oo-unit"><option>Unidade</option><option>Fardo</option><option>Pallet</option><option>Meio Pallet</option></select></div>
       <div class="field"><label>Preço unitário (opcional)</label><input class="input" id="oo-price" type="number" min="0" step="0.01" placeholder="Usa tabela se vazio"></div>

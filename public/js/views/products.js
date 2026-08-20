@@ -143,7 +143,7 @@ function openProductForm(product, prefillCode, draft) {
           <button class="btn btn--sm" id="f-scan" type="button">📷</button>
         </div>
       </div>
-      <div class="field field--full"><label>Nome</label><input class="input" id="f-nome" value="${v('nome')}"></div>
+      <div class="field field--full"><label>Nome</label><input class="input" id="f-nome" value="${v('nome')}"><span class="hint">Ao salvar, o volume será incluído no nome em ml para facilitar a identificação.</span></div>
       <div class="field"><label>Marca</label><input class="input" id="f-marca" value="${v('marca')}"></div>
       <div class="field"><label>Sabor</label><input class="input" id="f-sabor" value="${v('sabor')}"></div>
       <div class="field"><label>Volume</label><input class="input" id="f-volume" placeholder="Ex: 1L, 900ml" value="${v('volume')}"></div>
@@ -186,13 +186,16 @@ function openProductForm(product, prefillCode, draft) {
   saveBtn.onclick = async () => {
     const nome = document.getElementById('f-nome').value.trim();
     if (!nome) { toast('Informe o nome do produto.', 'warn'); return; }
+    const volume = document.getElementById('f-volume').value.trim();
+    const volumeMl = volumeToMl(volume);
     const data = {
       codigoInterno: document.getElementById('f-codigo-interno').value.trim(),
       codigoBarras: document.getElementById('f-codigo').value.trim(),
-      nome,
+      nome: productDisplayName({ nome, volume, volumeMl }),
       marca: document.getElementById('f-marca').value.trim(),
       sabor: document.getElementById('f-sabor').value.trim(),
-      volume: document.getElementById('f-volume').value.trim(),
+      volume,
+      volumeMl,
       embalagem: document.getElementById('f-embalagem').value,
       qtdPorEmbalagem: Number(document.getElementById('f-qtdemb').value) || 1,
       unidadesPorFardo: Number(document.getElementById('f-qtdemb').value) || 1,

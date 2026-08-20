@@ -253,12 +253,12 @@ function openEntryForm(state) {
             ${statusStamp('Produto não encontrado', 'danger')} ${confBadge}
             <span style="font-size:13px">${escapeHTML(it.nomeSugerido || it.codigoBarras || 'Item')} ${it.codigoBarras ? `<span class="hint cell-mono">(${escapeHTML(it.codigoBarras)})</span>` : ''} — qtd. ${fmtNumber(it.quantidade)}</span>
           </div>
-          ${sugestao ? `<p class="hint">Palpite: <strong>${escapeHTML(sugestao.nome)}</strong>? <button class="link-btn item-use-suggestion" data-idx="${idx}" data-sugid="${sugestao.id}">Usar este produto</button></p>` : ''}
+          ${sugestao ? `<p class="hint">Palpite: <strong>${escapeHTML(productDisplayName(sugestao))}</strong>? <button class="link-btn item-use-suggestion" data-idx="${idx}" data-sugid="${sugestao.id}">Usar este produto</button></p>` : ''}
           <div style="display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn--sm item-create-product" data-idx="${idx}" type="button">+ Cadastrar novo produto</button>
             <select class="input item-link-product" data-idx="${idx}" style="max-width:280px">
               <option value="">Vincular a produto existente…</option>
-              ${products.map(p => `<option value="${p.id}">${escapeHTML(p.nome)}</option>`).join('')}
+              ${products.filter(p => p.ativo !== false).sort((a,b) => String(a.codigoInterno||'').localeCompare(String(b.codigoInterno||''), 'pt-BR', {numeric:true})).map(p => `<option value="${p.id}">${escapeHTML(productSelectLabel(p, { includeCode:true, includePackaging:true }))}</option>`).join('')}
             </select>
           </div>
           <div style="text-align:right;margin-top:6px"><button class="icon-btn item-remove" data-idx="${idx}">🗑️ Remover</button></div>
@@ -273,7 +273,7 @@ function openEntryForm(state) {
           <div class="field field--full">
             <label>Produto</label>
             <div class="input-with-btn">
-              <input class="input" value="${escapeHTML(it.produtoNome || '')}" disabled>
+              <input class="input" value="${escapeHTML(linkedProduct ? productDisplayName(linkedProduct) : (it.produtoNome || ''))}" disabled>
               <button class="btn btn--sm item-scan" data-idx="${idx}" type="button">📷</button>
             </div>
             <span class="hint">✅ Vinculado</span>
@@ -314,7 +314,7 @@ function openEntryForm(state) {
       const product = products.find(p => p.id === e.target.value);
       if (!product) return;
       items[idx].produtoId = product.id;
-      items[idx].produtoNome = product.nome;
+      items[idx].produtoNome = productDisplayName(product);
       if (!items[idx].custoUnitario) items[idx].custoUnitario = Number(product.custoAtual || 0);
       drawItems();
     });
@@ -323,7 +323,7 @@ function openEntryForm(state) {
       const idx = Number(el.dataset.idx);
       openQuickProductCreate(items[idx], async (newProduct) => {
         items[idx].produtoId = newProduct.id;
-        items[idx].produtoNome = newProduct.nome;
+        items[idx].produtoNome = productDisplayName(newProduct);
         openEntryForm(readHeader()); // reabre a entrada (o modal do produto fechou por cima dela)
       });
     });
@@ -335,7 +335,7 @@ function openEntryForm(state) {
         const found = (await DB.all('products')).find(p => p.codigoBarras === code);
         if (found) {
           preserved.itens[idx].produtoId = found.id;
-          preserved.itens[idx].produtoNome = found.nome;
+          preserved.itens[idx].produtoNome = productDisplayName(found);
           if (!preserved.itens[idx].custoUnitario) preserved.itens[idx].custoUnitario = Number(found.custoAtual || 0);
         } else {
           preserved.itens[idx].codigoBarras = code;
@@ -411,9 +411,11 @@ function openQuickProductCreate(item, onCreated) {
   document.getElementById('qp-save').onclick = async () => {
     const nome = document.getElementById('qp-nome').value.trim();
     if (!nome) { toast('Informe o nome do produto.', 'warn'); return; }
+    const volume = document.getElementById('qp-volume').value.trim();
+    const volumeMl = volumeToMl(volume);
     const product = {
-      id: uid('prod'), nome, marca: document.getElementById('qp-marca').value.trim(), sabor: document.getElementById('qp-sabor').value.trim(),
-      volume: document.getElementById('qp-volume').value.trim(), embalagem: 'Outro', qtdPorEmbalagem: 1, unidadesPorFardo: 1, fardosPorPalete: null, nomeFardo: 'Fardo',
+      id: uid('prod'), nome: productDisplayName({ nome, volume, volumeMl }), marca: document.getElementById('qp-marca').value.trim(), sabor: document.getElementById('qp-sabor').value.trim(),
+      volume, volumeMl, embalagem: 'Outro', qtdPorEmbalagem: 1, unidadesPorFardo: 1, fardosPorPalete: null, nomeFardo: 'Fardo',
       estoqueMinimo: Number(document.getElementById('qp-min').value) || 10, codigoBarras: item.codigoBarras || '',
       localizacao: '', ativo: true, criadoEm: new Date().toISOString()
     };
