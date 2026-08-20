@@ -5,7 +5,7 @@ const { makeCatalog, toBaseUnits } = require('../catalog');
 test('catálogo Life possui 35 produtos e códigos esperados', () => {
   const cat = makeCatalog('2026-08-14T00:00:00.000Z');
   assert.equal(cat.length, 35);
-  assert.equal(cat.find(p => p.codigoInterno === '100').nome, 'Suco de Laranja');
+  assert.equal(cat.find(p => p.codigoInterno === '100').nome, 'Suco de Laranja 300 ml');
   assert.equal(cat.find(p => p.codigoInterno === '307').embalagem, 'Bag');
 });
 
