@@ -30,7 +30,7 @@ function friendlyListenError(err,port,label){
 function printBanner({ isNewDatabase, publicBaseUrl }){
   console.log('');
   console.log('════════════════════════════════════════════════════════');
-  console.log('   LIFE SUCOS · AION — v18.1 · AION Sync · Vendedores + Carteiras');
+  console.log('   LIFE SUCOS · AION — v18.2 · AION Skill 1.2 · AION Sync');
   console.log('════════════════════════════════════════════════════════');
   if(isNewDatabase) console.log('   Cache local criado nesta execução.');
   if(CLOUD_MODE){
@@ -54,7 +54,7 @@ async function main(){
   // usuários, estoque e dados existentes do Neon já estão presentes quando
   // o bootstrap e as rotas são inicializados.
   if(CLOUD_MODE){
-    if(!process.env.DATABASE_URL) throw new Error('DATABASE_URL é obrigatório para a v17 em nuvem.');
+    if(!process.env.DATABASE_URL) throw new Error('DATABASE_URL é obrigatório no modo nuvem.');
     persistence = require('./cloudPersistence');
     console.log('   [cloud] Restaurando estado persistente do Neon...');
     const restored = await persistence.restoreFromNeon();
@@ -131,7 +131,7 @@ function startHttps(app){
 }
 
 main().catch(err=>{
-  console.error('\n[ERRO FATAL] Não foi possível iniciar o Life Sucos v18.1:', err.message);
+  console.error('\n[ERRO FATAL] Não foi possível iniciar o Life Sucos v18.2:', err.message);
   if(err.stack) console.error(err.stack);
   process.exit(1);
 });

@@ -1,4 +1,4 @@
-# Life Sucos | AION — v17.2
+# Life Sucos | AION — v18.2
 
 Ecossistema operacional da Life Sucos com estoque, recebimento, fornecedores, vendas, devoluções, central fiscal, relatórios e Sistema de Inteligência AION.
 
@@ -47,11 +47,9 @@ Em **Configurações → Dados do depósito / emitente**, cadastre razão social
 
 ## Atalho Windows
 
-`iniciar-app.bat` agora é **cloud-first** e abre diretamente:
+`iniciar-app.bat` inicia o servidor local resiliente do depósito. A operação local continua disponível mesmo durante indisponibilidade de internet, Render ou Neon, e o AION Sync replica as mutações quando a conexão retorna.
 
-`https://life-sucos-aion.onrender.com`
-
-Ele não tenta mais iniciar o servidor Node local. O modo local continua disponível explicitamente por `iniciar.bat` para contingência/técnica.
+O Render e o Neon atendem a operação em nuvem e o acesso dos vendedores pelo Life Vendas, compondo a arquitetura híbrida com o servidor local do depósito.
 
 ## Segurança de primeiro acesso
 

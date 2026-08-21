@@ -55,7 +55,7 @@ async function renderSettings(root) {
 
       <div class="card">
         <div class="section-title" style="margin-top:0">Backup completo</div>
-        <p class="hint">A v15 cria backups íntegros automáticos do SQLite. O backup JSON v6 inclui também os usuários (com hashes de senha, nunca senha em texto) para facilitar a migração do banco local para a nuvem. Sessões não são copiadas.</p>
+        <p class="hint">O sistema cria backups íntegros do SQLite e permite backup JSON dos dados e usuários. Senhas são armazenadas somente como hashes e sessões não fazem parte do backup.</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn" id="st-export">⬇️ Exportar backup (.json)</button>
           <button class="btn" id="st-export-sqlite">☁️ Baixar banco SQLite</button>

@@ -19,7 +19,7 @@ const { createDatabaseBackup } = require('./cloudBackup');
 const { searchAll } = require('./globalSearch');
 
 const router = express.Router();
-const SYSTEM_VERSION = '18.1.0-aion-sync-hybrid-sellers-portfolios-password-change';
+const SYSTEM_VERSION = '18.2.0-aion-skill-1.2-hybrid-sellers-portfolios';
 const { getCloudPersistenceStatus } = require('./cloudPersistence');
 
 
