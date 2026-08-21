@@ -45,7 +45,7 @@ router.post('/entries', handle((req) => {
 
 router.post('/exits', handle((req) => {
   const b = req.body || {};
-  return svc.createExit({ ...b, usuario: currentUser(req) });
+  return svc.createExit({ ...b, usuario: currentUser(req), ignoreReservations: !!req.isSyncReplay });
 }));
 
 router.post('/exits/:id/conclude', handle((req) => {

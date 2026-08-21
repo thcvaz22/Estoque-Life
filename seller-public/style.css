@@ -33,3 +33,6 @@ body.seller-app-mode .login{display:none !important}
 .aion-ai-privacy{position:relative;padding:0 13px 10px;background:rgba(255,255,255,.42);color:#87907A;font-size:9.2px;text-align:center}
 @media(max-width:640px){.aion-ai-fab{right:14px;bottom:20px;width:66px;height:66px;border-radius:22px}.aion-ai-fab__spark{font-size:20px}.aion-ai-fab__text strong{font-size:16px}.aion-ai-panel{right:10px;bottom:98px;width:calc(100vw - 20px);height:min(620px,calc(100vh - 118px));border-radius:22px}}
 @media print{.aion-ai-fab,.aion-ai-panel{display:none!important}}
+
+/* v18.1 · conta do vendedor */
+#passwordForm input{width:100%}

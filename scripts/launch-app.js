@@ -16,7 +16,7 @@ const { spawn } = require('child_process');
 const ROOT = path.resolve(__dirname, '..');
 const LOG_DIR = path.join(ROOT, 'logs');
 const SERVER_LOG = path.join(LOG_DIR, 'servidor.log');
-const EXPECTED_VERSION = '17.2.0-neon-primary-render-free-recebimento-fiscal-aion-1.1';
+const EXPECTED_VERSION = '18.0.0-aion-sync-hybrid-local-cloud-offline-sellers';
 const PORT = Number(process.env.PORT || 4000);
 const HTTPS_PORT = Number(process.env.HTTPS_PORT || 4443);
 const URL = `http://127.0.0.1:${PORT}`;
@@ -121,7 +121,7 @@ function openApp() {
 }
 
 async function main() {
-  log('Iniciando Life Sucos...');
+  log('Iniciando Life Sucos v18 · servidor local resiliente...');
 
   const existing = await healthCheck();
   if (existing.online) {

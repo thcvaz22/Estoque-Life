@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const { db, Data, DB_PATH } = require('./db');
+const { SELLERS: PRESEEDED_SELLERS } = require('./preseedV18_1');
 
 const COOKIE_NAME = 'ls_sessao';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -103,6 +104,21 @@ function repairFreshV15V16LocalLogin(now) {
   }
 }
 
+function seedPredefinedSellersV18_1(now = new Date().toISOString()) {
+  let inserted = 0;
+  for (const spec of PRESEEDED_SELLERS) {
+    const existing = db.prepare(`SELECT * FROM users WHERE username = ? COLLATE NOCASE OR nome = ? COLLATE NOCASE LIMIT 1`)
+      .get(spec.username, spec.nome);
+    if (existing) continue;
+    db.prepare(`INSERT INTO users
+      (id, username, nome, perfil, passwordSalt, passwordHash, ativo, createdAt, updatedAt)
+      VALUES (?, ?, ?, 'Vendedor', ?, ?, 1, ?, ?)`)
+      .run(spec.id, spec.username, spec.nome, spec.passwordSalt, spec.passwordHash, now, now);
+    inserted++;
+  }
+  if (inserted) console.log(`   [v18.1] ${inserted} vendedor(es) pré-cadastrado(s) a partir das carteiras comerciais.`);
+}
+
 function ensureAuthSchema() {
   // Migração defensiva: versões anteriores do Life podem ter deixado tabelas
   // users/sessions com estrutura diferente. CREATE TABLE IF NOT EXISTS não
@@ -177,6 +193,7 @@ function ensureAuthSchema() {
     repairFreshV15V16LocalLogin(now);
   }
 
+  seedPredefinedSellersV18_1(now);
   sweepExpiredSessions();
 }
 
@@ -215,7 +232,12 @@ function publicUser(row, { includeStatus = false } = {}) {
 }
 
 function authenticate(username, password) {
-  const row = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE AND ativo = 1').get(String(username || '').trim());
+  const key = String(username || '').trim();
+  let row = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE AND ativo = 1').get(key);
+  if (!row && key) {
+    const byName = db.prepare('SELECT * FROM users WHERE nome = ? COLLATE NOCASE AND ativo = 1 ORDER BY createdAt ASC').all(key);
+    if (byName.length === 1) row = byName[0];
+  }
   if (!row || !verifyPassword(password, row.passwordSalt, row.passwordHash)) return null;
   return publicUser(row);
 }
@@ -261,7 +283,12 @@ function createSession(userId) {
   const expiresAtMs = Date.now() + SESSION_TTL_MS;
   const payload = Buffer.from(JSON.stringify({ uid: userId, exp: expiresAtMs, ver: row.updatedAt || '' }), 'utf8').toString('base64url');
   const signature = signSessionPayload(payload);
-  return { token: `${payload}.${signature}`, expiresAt: new Date(expiresAtMs) };
+  const token = `${payload}.${signature}`;
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(expiresAtMs);
+  db.prepare('INSERT OR REPLACE INTO sessions (tokenHash, userId, createdAt, expiresAt) VALUES (?, ?, ?, ?)')
+    .run(hashToken(token), userId, createdAt, expiresAt.toISOString());
+  return { token, expiresAt };
 }
 
 function getSessionUser(token) {
@@ -276,6 +303,8 @@ function getSessionUser(token) {
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
     const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     if (!parsed.uid || !parsed.exp || Date.now() >= Number(parsed.exp)) return null;
+    const session = db.prepare('SELECT userId, expiresAt FROM sessions WHERE tokenHash = ?').get(hashToken(token));
+    if (!session || session.userId !== parsed.uid || Date.now() >= Date.parse(session.expiresAt)) return null;
     const row = db.prepare('SELECT * FROM users WHERE id = ? AND ativo = 1').get(parsed.uid);
     if (!row) return null;
     // updatedAt funciona como versao da sessao: trocar senha/perfil/desativar invalida tokens antigos.
@@ -286,8 +315,9 @@ function getSessionUser(token) {
   }
 }
 
-function destroySession(_token) {
-  // Sessao assinada e stateless: o logout efetivo ocorre ao apagar o cookie.
+function destroySession(token) {
+  if (!token) return;
+  db.prepare('DELETE FROM sessions WHERE tokenHash = ?').run(hashToken(token));
 }
 
 function destroyUserSessions(userId) {
@@ -341,6 +371,10 @@ function clearSessionCookie(req, res) {
 }
 
 function requireAuth(req, res, next) {
+  // v18: operações vindas de um servidor local pareado já chegam com uma
+  // identidade sintética validada pelo AION Sync. Não exigimos cookie humano
+  // novamente, mas apenas para requisições marcadas como replay autorizado.
+  if (req.isSyncReplay && req.authUser) return next();
   const user = getSessionUser(requestToken(req));
   if (!user) return res.status(401).json({ error: 'Sessão expirada ou inválida. Faça login novamente.', code: 'AUTH_REQUIRED' });
   req.authUser = user;
@@ -453,6 +487,41 @@ function createAuthRouter() {
     const user = getSessionUser(requestToken(req));
     if (!user) return res.status(401).json({ error: 'Sessão não autenticada.', code: 'AUTH_REQUIRED' });
     res.json({ user });
+  });
+
+  router.post('/change-password', (req, res) => {
+    try {
+      const sessionUser = getSessionUser(requestToken(req));
+      if (!sessionUser) return res.status(401).json({ error: 'Sessão não autenticada.', code: 'AUTH_REQUIRED' });
+      const row = db.prepare('SELECT * FROM users WHERE id = ? AND ativo = 1').get(sessionUser.id);
+      if (!row) return res.status(404).json({ error: 'Usuário não encontrado.' });
+
+      const currentPassword = String(req.body?.currentPassword || '');
+      const newPassword = String(req.body?.newPassword || '');
+      const confirmPassword = String(req.body?.confirmPassword || '');
+
+      if (!verifyPassword(currentPassword, row.passwordSalt, row.passwordHash)) {
+        return res.status(401).json({ error: 'Senha atual incorreta.' });
+      }
+      if (newPassword !== confirmPassword) {
+        return res.status(400).json({ error: 'A confirmação da nova senha não confere.' });
+      }
+      if (newPassword.length < 8) {
+        return res.status(400).json({ error: 'A nova senha deve ter pelo menos 8 caracteres.' });
+      }
+      if (verifyPassword(newPassword, row.passwordSalt, row.passwordHash)) {
+        return res.status(400).json({ error: 'Escolha uma senha diferente da senha atual.' });
+      }
+
+      const { salt, hash } = hashPassword(newPassword);
+      const now = new Date().toISOString();
+      db.prepare('UPDATE users SET passwordSalt = ?, passwordHash = ?, updatedAt = ? WHERE id = ?')
+        .run(salt, hash, now, row.id);
+      auditUserAction(sessionUser, 'senha_alterada_pelo_usuario', row, 'Senha alterada pelo próprio usuário');
+      res.json({ ok: true, requiresRelogin: true });
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message || 'Não foi possível alterar a senha.' });
+    }
   });
 
   router.post('/logout', (req, res) => {

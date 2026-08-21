@@ -18,6 +18,7 @@ const fiscalRouter = require('./fiscalRoutes');
 const { createOcrRouter } = require('./ocrRoutes');
 const { createAuthRouter, createUserRouter, requireAuth, requireManager, requireOperational } = require('./auth');
 const { cloudPersistenceEnabled, flushToNeon, queueCloudFlush } = require('./cloudPersistence');
+const { createSyncRouter, syncDeviceAuthMiddleware, captureLocalMutations, cloudReplayIdempotency } = require('./hybridSync');
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const SELLER_DIR = path.join(__dirname, '..', 'seller-public');
@@ -27,7 +28,12 @@ function createApp({ seed = true, ocrEngine } = {}) {
   const app = express();
   app.set('trust proxy', 1);
   const baseJson = express.json({ limit: '8mb' });
-  app.use((req, res, next) => (req.originalUrl.startsWith('/api/ocr/') || req.originalUrl.startsWith('/api/fiscal/')) ? next() : baseJson(req, res, next));
+  app.use((req, res, next) => (req.originalUrl.startsWith('/api/ocr/') || req.originalUrl.startsWith('/api/fiscal/') || req.originalUrl.startsWith('/api/sync/attachments')) ? next() : baseJson(req, res, next));
+  app.use('/api/sync/attachments', express.json({ limit: '60mb' }));
+
+  // v18: autenticação de dispositivo AION Sync ocorre antes da autenticação
+  // humana. Só tokens previamente pareados conseguem definir req.authUser.
+  app.use(syncDeviceAuthMiddleware);
 
   // v17 cloud: uma escrita só é anunciada como concluída depois de o estado
   // resultante ter sido confirmado no Neon. O SQLite da instância funciona
@@ -65,6 +71,12 @@ function createApp({ seed = true, ocrEngine } = {}) {
     next();
   });
 
+  // v18: o replay idempotente fica DEPOIS do wrapper de persistência. Assim
+  // o marcador da operação é gravado antes de o snapshot ser confirmado no
+  // Neon, sobrevivendo inclusive a reinícios do Render.
+  app.use(cloudReplayIdempotency());
+  app.use(captureLocalMutations());
+
   // Auditoria de segurança: se uma operação de escrita terminar com sucesso
   // e a rota específica não tiver gravado um histórico detalhado, registramos
   // uma entrada genérica. Assim nenhuma alteração relevante fica sem trilha.
@@ -99,6 +111,13 @@ function createApp({ seed = true, ocrEngine } = {}) {
     });
     next();
   });
+
+  // AION Sync possui pareamento público por código temporário e demais
+  // rotas com autenticação própria (sessão humana ou token de dispositivo).
+  app.use('/api/sync', (req,res,next) => {
+    if (req.path === '/pair' || req.isSyncReplay) return next();
+    return requireAuth(req,res,next);
+  }, createSyncRouter());
 
   // Login/logout precisam ser públicos. Todo o restante da API operacional
   // exige uma sessão válida; /api/health é a única exceção porque o

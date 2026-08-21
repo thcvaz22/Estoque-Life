@@ -30,7 +30,7 @@ async function renderCommercialCustomers(root) {
       <div>
         <span class="dashboard-welcome__eyebrow">Life Vendas · Clientes</span>
         <h1>Clientes</h1>
-        <p>Cadastros dos vendedores chegam para aprovação e a operação também pode cadastrar clientes diretamente.</p>
+        <p>Cadastros dos vendedores e pré-cadastros importados chegam para conferência. A operação também pode cadastrar clientes diretamente.</p>
       </div>
       <div class="page-head-actions">
         <button class="btn btn--primary" id="op-new-customer"><span class="action-icon">＋</span> Adicionar cliente</button>
@@ -46,9 +46,9 @@ async function renderCommercialCustomers(root) {
             <div style="display:flex;justify-content:space-between;gap:12px">
               <div>
                 <h3>${escapeHTML(c.nome || c.nomeFantasia || c.razaoSocial)}</h3>
-                <p class="hint">${escapeHTML(c.cnpj || 'Sem CNPJ')} · Vendedor: ${escapeHTML(c.vendedorNome || '-')}</p>
+                <p class="hint">${escapeHTML(c.cnpj || (c.statusAprovacao === 'pre_cadastro' ? 'Pré-cadastro · dados complementares pendentes' : 'Sem CNPJ'))} · Vendedor: ${escapeHTML(c.vendedorNome || '-')}</p>${c.ultimaCompra ? `<p class="hint">Último pedido: ${fmtDate(c.ultimaCompra)}</p>` : ''}
               </div>
-              ${statusStamp('PENDENTE','warn')}
+              ${statusStamp(c.statusAprovacao === 'pre_cadastro' ? 'PRÉ-CADASTRO' : 'PENDENTE','warn')}
             </div>
             <p class="hint">${escapeHTML([c.endereco,c.bairro,c.cidade,c.uf].filter(Boolean).join(' · '))}</p>
             <div class="form-actions">
@@ -62,16 +62,16 @@ async function renderCommercialCustomers(root) {
     <div class="section-title">Clientes cadastrados</div>
     <div class="card table-wrap">
       <table class="data">
-        <thead><tr><th>Cliente</th><th>Cidade / Bairro</th><th>Vendedor</th><th>Classificação</th><th>Tabela</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Cliente</th><th>Último pedido</th><th>Cidade / Bairro</th><th>Vendedor</th><th>Classificação</th><th>Tabela</th><th>Status</th><th></th></tr></thead>
         <tbody>
           ${customers.map(c => `
             <tr>
               <td><strong>${escapeHTML(c.nome || c.nomeFantasia || c.razaoSocial)}</strong><br><span class="hint">${escapeHTML(c.cnpj || '')}</span></td>
-              <td>${escapeHTML([c.cidade,c.bairro].filter(Boolean).join(' · ') || '—')}</td>
+              <td>${c.ultimaCompra ? fmtDate(c.ultimaCompra) : '—'}</td><td>${escapeHTML([c.cidade,c.bairro].filter(Boolean).join(' · ') || '—')}</td>
               <td>${escapeHTML(c.vendedorNome || '—')}</td>
               <td>${c.classificacao ? statusStamp(c.classificacao,c.classificacao === 'Verde' ? 'ok' : 'warn') : '—'}</td>
               <td>${escapeHTML(tables.find(t => t.id === c.tabelaPrecoId)?.nome || '—')}</td>
-              <td>${statusStamp(c.statusAprovacao || 'aprovado',c.statusAprovacao === 'aprovado' ? 'ok' : c.statusAprovacao === 'pendente' ? 'warn' : 'danger')}</td>
+              <td>${statusStamp(c.statusAprovacao === 'pre_cadastro' ? 'pré-cadastro' : (c.statusAprovacao || 'aprovado'),c.statusAprovacao === 'aprovado' ? 'ok' : ['pendente','pre_cadastro'].includes(c.statusAprovacao) ? 'warn' : 'danger')}</td>
               <td>${Auth.isManager() ? `<button class="btn btn--ghost btn--sm" data-transfer="${c.id}">Transferir</button>` : ''}</td>
             </tr>`).join('')}
         </tbody>

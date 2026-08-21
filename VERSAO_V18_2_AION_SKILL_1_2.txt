@@ -1,0 +1,13 @@
+Life Sucos v18.2 — AION Official Skill v1.2
+
+Principais mudanças:
+- AION conversacional e mais humanizada;
+- memória curta das últimas interações;
+- especialista do próprio Life Sucos e Life Vendas;
+- dúvidas de sistema fundamentadas na base interna e naturalizadas pela IA externa quando disponível;
+- calculadora logística nativa por produto;
+- conversões entre unidade, fardo/caixa, meio pallet e pallet;
+- respostas de dados mais completas, com contexto e próximos caminhos úteis;
+- padrão definido para reutilização nos próximos projetos AION.
+
+Princípio: Código calcula. AION entende, conversa, interpreta e resolve.

@@ -10,6 +10,7 @@
 const AionIA = (() => {
   let open = false;
   let busy = false;
+  const conversation = [];
 
   function ensureUI() {
     if (document.getElementById('aion-ai-fab')) return;
@@ -31,7 +32,7 @@ const AionIA = (() => {
       <div class="aion-ai-panel__head">
         <div class="aion-ai-brand">
           <span class="aion-ai-brand__icon">✦</span>
-          <div><strong>AION IA</strong><small id="aion-ai-mode">Sistema de Inteligência AION · Skill 1.1</small></div>
+          <div><strong>AION IA</strong><small id="aion-ai-mode">Sistema de Inteligência AION · Conversacional</small></div>
         </div>
         <button class="icon-btn aion-ai-close" type="button" aria-label="Fechar">✕</button>
       </div>
@@ -43,6 +44,7 @@ const AionIA = (() => {
         <button data-prompt="Analise minha operação e diga o que devo priorizar hoje">Analisar operação</button>
         <button data-prompt="Como faço uma entrada por foto da NF?">Entrada por foto</button>
         <button data-prompt="Quanto tenho de produtos com estoque zerado?">Estoque crítico</button>
+        <button data-prompt="48 unidades do código 100 dão quantos fardos?">Converter embalagens</button>
         <button data-prompt="Faça um benchmarking do mercado de sucos e bebidas, compare com minha operação e recomende as 3 melhores oportunidades">Benchmark</button>
         <button data-prompt="Quais tendências do mercado de sucos e bebidas devo acompanhar?">Mercado</button>
       </div>
@@ -61,7 +63,7 @@ const AionIA = (() => {
       input.value = '';
       submitPrompt(text);
     });
-    addAssistant(`Olá, ${Auth.currentUser()?.nome || 'tudo bem'}! Eu sou o Sistema de Inteligência AION. Posso ensinar o uso do sistema, analisar a operação, sugerir prioridades e, quando habilitado, pesquisar informações atuais do mercado.`);
+    addAssistant(`Olá, ${Auth.currentUser()?.nome || 'tudo bem'}! Pode falar comigo normalmente. Eu conheço o Life Sucos, posso tirar dúvidas sobre qualquer tela ou processo, consultar seus dados, fazer contas e conversões de fardos/caixas/pallets e também analisar a operação.`);
     loadStatus();
   }
 
@@ -70,7 +72,7 @@ const AionIA = (() => {
     try {
       const r=await fetch('/api/aion/status',{cache:'no-store'}); if(!r.ok)return; const d=await r.json();
       const mode=document.getElementById('aion-ai-mode'); const privacy=document.getElementById('aion-ai-privacy');
-      if(mode) mode.textContent=d.webSearch?'Inteligência local + web':d.externalAI?'Inteligência local + IA externa':'Inteligência local';
+      if(mode) mode.textContent=d.webSearch?'AION conversacional + web':d.externalAI?'AION conversacional + IA externa':'AION conversacional · local';
       if(privacy) privacy.textContent=d.externalAI?'🔒 Dados internos seguem suas permissões; consultas externas usam contexto minimizado.':'🔒 Inteligência local ativa. A conexão externa pode ser habilitada no servidor.';
     } catch {}
   }
@@ -101,9 +103,13 @@ const AionIA = (() => {
     if (busy) return;
     setOpen(true); addUser(text); const thinking = addThinking(); busy = true;
     try {
-      const data = await postJSON('/api/aion/ask', { message:text });
+      const history=conversation.slice(-10);
+      conversation.push({role:'user',content:text});
+      const data = await postJSON('/api/aion/ask', { message:text, history });
       thinking?.remove();
-      addAssistant(data.reply || 'Pronto.');
+      const reply=data.reply || 'Pronto.';
+      addAssistant(reply);
+      conversation.push({role:'assistant',content:reply});
       if (data.action) renderAction(data.action);
     } catch (err) {
       thinking?.remove();

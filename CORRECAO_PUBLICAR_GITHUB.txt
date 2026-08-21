@@ -1,0 +1,16 @@
+CORREÇÃO DO PUBLICADOR GITHUB — LIFE SUCOS v16.2
+
+Problema corrigido:
+- "Author identity unknown"
+- "fatal: unable to auto-detect email address"
+- "src refspec main does not match any"
+
+O publicador agora configura a identidade Git somente dentro deste projeto:
+- user.name = thcvaz22
+- user.email = endereço noreply oficial do GitHub
+
+Isso não altera a configuração Git de outros projetos do computador.
+
+Os avisos "LF will be replaced by CRLF" são apenas avisos de fim de linha do Windows e não impedem a publicação.
+
+Execute novamente: publicar-github.bat

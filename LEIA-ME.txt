@@ -8,3 +8,11 @@ Substitua SOMENTE estes 5 arquivos dentro de public/js/views/:
 - products.js
 
 Não crie uma pasta nova no repositório. Abra public/js/views no GitHub e envie os 5 arquivos, confirmando a substituição dos existentes.
+
+============================================================
+V18.0 — AION SYNC / OPERAÇÃO HÍBRIDA
+============================================================
+Para transformar este computador no servidor local resiliente, execute uma vez:
+  instalar-servidor-hibrido.bat
+Depois abra Configurações > AION Sync e faça o pareamento com a nuvem.
+Leia também GUIA_V18_AION_SYNC.md.

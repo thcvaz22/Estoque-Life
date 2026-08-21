@@ -66,3 +66,18 @@ test('gera especificação de relatório por cliente', async () => {
   assert.match(b.action.report.title,/Cliente/i);
   assert.ok(Array.isArray(b.action.report.rows));
 });
+
+
+test('AION converte unidades em fardos usando cadastro real do produto', async () => {
+  const r = await post('/api/aion/ask',{message:'48 unidades do código 100 dão quantos fardos?'});
+  assert.equal(r.status,200); const b=await r.json();
+  assert.match(b.reply,/2 fardos/i); assert.match(b.reply,/24 un\./i);
+  assert.equal(b.source,'local-calculator');
+});
+
+test('AION responde continuação de conversão usando memória curta', async () => {
+  const history=[{role:'user',content:'48 unidades do código 100 dão quantos fardos?'},{role:'assistant',content:'48 unidades = 2 fardos.'}];
+  const r = await post('/api/aion/ask',{message:'e em pallets?',history});
+  assert.equal(r.status,200); const b=await r.json();
+  assert.equal(b.source,'local-calculator'); assert.match(b.reply,/pallet/i);
+});

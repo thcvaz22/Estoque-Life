@@ -262,9 +262,10 @@ router.post('/ask', async (req,res)=>{
   const text=String(req.body?.message||'').trim();
   if(!text) return res.status(400).json({error:'Escreva uma pergunta ou solicitação.'});
   const n=norm(text);
+  const history=Array.isArray(req.body?.history)?req.body.history.slice(-10):[];
   const snap=operationalSnapshot();
 
-  const sharedData=AionUnified.dataAnswer(req,text,'operational');
+  const sharedData=AionUnified.dataAnswer(req,text,'operational',history);
   if(sharedData) return res.json(sharedData);
 
   // Relatórios e PDFs
@@ -336,7 +337,7 @@ router.post('/ask', async (req,res)=>{
 
   // Camada unificada: ajuda ampla, análise gerencial e IA externa/web opcional.
   try {
-    const answer = await AionUnified.unifiedFallback({req,message:text,scope:'operational'});
+    const answer = await AionUnified.unifiedFallback({req,message:text,scope:'operational',history});
     if (answer) return res.json(answer);
   } catch (err) {
     console.warn('[AION] fallback unificado:', err.message);

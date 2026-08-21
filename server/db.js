@@ -13,6 +13,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const Database = require('better-sqlite3');
+const crypto = require('crypto');
 
 const CLOUD_MODE = String(process.env.CLOUD_MODE || '').toLowerCase() === 'true' || !!process.env.RENDER;
 // v17: em nuvem o SQLite é somente cache transacional efêmero. A persistência
@@ -24,6 +25,12 @@ const isNewDatabase = !fs.existsSync(DB_PATH);
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
+// v18: no servidor local priorizamos durabilidade a alguns milissegundos de
+// desempenho. FULL reduz o risco de perder commits já confirmados em uma
+// queda abrupta de energia/SO. Na nuvem efêmera, o Neon continua sendo a
+// persistência durável e NORMAL evita fsync desnecessário no cache.
+db.pragma(`synchronous = ${CLOUD_MODE ? 'NORMAL' : 'FULL'}`);
+db.pragma('busy_timeout = 5000');
 db.pragma('foreign_keys = ON');
 
 // Coleções "documento" — CRUD genérico simples ainda faz sentido para elas
@@ -202,6 +209,87 @@ function seedIfNewDatabase() {
   }
   if (cInserted || sInserted) console.log(`   [cadastros] ${cInserted} cliente(s) e ${sInserted} fornecedor(es) aproveitados do histórico.`);
 
+  // v18.1 — pré-cadastro das carteiras enviadas pela Life. Os registros
+  // entram incompletos e NÃO ficam disponíveis para pedido até a operação
+  // complementar os dados e aprovar/classificar o cliente.
+  const { CUSTOMER_PORTFOLIOS } = require('./preseedV18_1');
+  const byCustomerName = new Map(Data.all('customers').map(c => [String(c.nome || c.nomeFantasia || c.razaoSocial || '').trim().toLowerCase(), c]));
+  let preRegistered = 0, enriched = 0;
+  for (const portfolio of CUSTOMER_PORTFOLIOS) {
+    const seller = db.prepare(`SELECT id,username,nome,perfil,ativo FROM users
+      WHERE perfil='Vendedor' AND ativo=1 AND (username=? COLLATE NOCASE OR nome=? COLLATE NOCASE)
+      ORDER BY CASE WHEN username=? COLLATE NOCASE THEN 0 ELSE 1 END LIMIT 1`)
+      .get(portfolio.sellerUsername, portfolio.sellerName, portfolio.sellerUsername);
+    if (!seller) {
+      console.warn(`   [v18.1] Vendedor não encontrado para carteira: ${portfolio.sellerName}`);
+      continue;
+    }
+    for (const item of portfolio.customers) {
+      const key = String(item.nome || '').trim().toLowerCase();
+      if (!key) continue;
+      const existingCustomer = byCustomerName.get(key);
+      if (existingCustomer) {
+        let changed = false;
+        if (!existingCustomer.vendedorId) {
+          existingCustomer.vendedorId = seller.id;
+          existingCustomer.vendedorNome = seller.nome;
+          changed = true;
+        }
+        if (!existingCustomer.ultimaCompra || String(item.ultimaCompra) > String(existingCustomer.ultimaCompra)) {
+          existingCustomer.ultimaCompra = item.ultimaCompra;
+          changed = true;
+        }
+        if (!existingCustomer.origemCarteira) {
+          existingCustomer.origemCarteira = 'relatorio_ultimo_pedido_2026-08-20';
+          changed = true;
+        }
+        if (changed) {
+          Data.upsert('customers', existingCustomer.id, existingCustomer);
+          enriched++;
+        }
+        continue;
+      }
+
+      const id = 'cli_pre_' + crypto.createHash('sha256')
+        .update(`${portfolio.sellerUsername}|${item.nome}`,'utf8').digest('hex').slice(0,24);
+      const customer = {
+        id,
+        nome: item.nome,
+        nomeFantasia: item.nome,
+        razaoSocial: '',
+        cnpj: '',
+        inscricaoEstadual: '',
+        telefone: '',
+        whatsapp: '',
+        email: '',
+        endereco: '',
+        bairro: '',
+        cidade: '',
+        uf: '',
+        regiao: '',
+        fornecedor: '',
+        observacoes: 'Pré-cadastro criado a partir do relatório de último pedido. Aguardando dados cadastrais complementares.',
+        vendedorId: seller.id,
+        vendedorNome: seller.nome,
+        ultimaCompra: item.ultimaCompra,
+        statusAprovacao: 'pre_cadastro',
+        classificacao: null,
+        tabelaPrecoId: null,
+        cadastroIncompleto: true,
+        dadosPendentes: ['cnpj','contato','endereco','classificacao','tabelaPreco'],
+        ativo: true,
+        origem: 'relatorio_ultimo_pedido',
+        origemCarteira: 'relatorio_ultimo_pedido_2026-08-20',
+        criadoEm: now,
+        criadoPor: 'Importação v18.1'
+      };
+      Data.upsert('customers', id, customer);
+      byCustomerName.set(key, customer);
+      preRegistered++;
+    }
+  }
+  if (preRegistered || enriched) console.log(`   [v18.1] ${preRegistered} cliente(s) pré-cadastrado(s); ${enriched} cadastro(s) existente(s) enriquecido(s).`);
+
   // Tabelas comerciais padrão. Os preços começam zerados e podem ser
   // preenchidos pela equipe comercial sem recriar a estrutura.
   const existingTables = Data.all('priceTables');
@@ -217,7 +305,7 @@ function seedIfNewDatabase() {
   for (const c of Data.all('customers')) {
     let changed = false;
     if (!c.statusAprovacao) { c.statusAprovacao = 'aprovado'; changed = true; }
-    if (!c.classificacao) { c.classificacao = 'Verde'; changed = true; }
+    if (!c.classificacao && c.statusAprovacao !== 'pre_cadastro') { c.classificacao = 'Verde'; changed = true; }
     if (c.ativo === undefined) { c.ativo = true; changed = true; }
     if (changed) Data.upsert('customers', c.id, c);
   }

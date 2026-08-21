@@ -1,0 +1,10 @@
+Life Sucos v18.1.0 — Vendedores + Carteiras iniciais
+
+- 5 vendedores pré-cadastrados.
+- Login aceita nome completo ou usuário.
+- Senha inicial solicitada para todos: life2026 (armazenada somente como scrypt hash + salt no seed).
+- Life Vendas ganhou Minha conta > Trocar senha.
+- 284 clientes pré-cadastrados a partir dos relatórios de último pedido.
+- Cada cliente preserva vendedor responsável e data do último pedido.
+- Pré-cadastros ficam bloqueados para pedidos até completar dados e aprovar/classificar.
+- Alteração de senha entra no AION Sync para propagação entre local e nuvem.

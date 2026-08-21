@@ -208,7 +208,7 @@ function createEntry({ operationId, fornecedor, fornecedorId, cnpjFornecedor, nf
    2. SAÍDA — validação de TODA a carga antes de mexer em qualquer
    lote (atomicidade); consumo por NF, com FEFO no servidor.
    ============================================================ */
-function createExit({ operationId, motorista, veiculo, placa, cliente, horarioSaida, status, nfs, origemRomaneio, romaneioNumero, fotos, usuario, reservationOrderId = null }) {
+function createExit({ operationId, motorista, veiculo, placa, cliente, horarioSaida, status, nfs, origemRomaneio, romaneioNumero, fotos, usuario, reservationOrderId = null, ignoreReservations = false }) {
   return withIdempotency(operationId, () => {
     if (!motorista) throw httpError(400, 'Informe o motorista.');
     if (!Array.isArray(nfs) || nfs.length === 0) throw httpError(400, 'Informe ao menos uma NF com itens.');
@@ -233,7 +233,7 @@ function createExit({ operationId, motorista, veiculo, placa, cliente, horarioSa
         }
       }
       for (const produtoId of Object.keys(necessidadeTotal)) {
-        const disponivel = computeAvailableForExit(produtoId, reservationOrderId);
+        const disponivel = ignoreReservations ? computeAvailable(produtoId) : computeAvailableForExit(produtoId, reservationOrderId);
         if (disponivel < necessidadeTotal[produtoId]) {
           const product = getProduct(produtoId);
           throw httpError(409, `Estoque insuficiente para ${product ? product.nome : produtoId}. Disponível: ${disponivel}, solicitado: ${necessidadeTotal[produtoId]}.`);

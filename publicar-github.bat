@@ -1,98 +1,73 @@
 @echo off
 setlocal EnableExtensions
-chcp 65001 >nul 2>nul
 cd /d "%~dp0"
-title Life Sucos v16.2 - Publicar no GitHub
+title Life Sucos v16.3 - Atualizar GitHub
 
-echo ================================================
-echo LIFE SUCOS v16.2 - PUBLICAR NO GITHUB
-echo Repositorio: thcvaz22/Estoque-Life
-echo ================================================
+echo ==============================================================
+echo LIFE SUCOS v16.3 - ATUALIZAR GITHUB COM SEGURANCA
+echo ==============================================================
 echo.
 
 where git >nul 2>nul
 if errorlevel 1 (
-  echo [ERRO] Git nao foi encontrado neste computador.
-  echo Instale o Git for Windows e execute novamente.
-  echo.
+  echo [ERRO] Git nao encontrado neste computador.
+  echo Instale o Git for Windows e execute este arquivo novamente.
   pause
   exit /b 1
 )
 
-REM Configura identidade LOCAL apenas para este projeto, sem alterar outros repositorios.
-for /f "delims=" %%i in ('git config --local user.name 2^>nul') do set "GIT_NAME=%%i"
-if not defined GIT_NAME git config --local user.name "thcvaz22"
+set "REPO=https://github.com/thcvaz22/Estoque-Life.git"
+set "TMP=%TEMP%\Life-Sucos-GitHub-v163-%RANDOM%-%RANDOM%"
 
-for /f "delims=" %%i in ('git config --local user.email 2^>nul') do set "GIT_EMAIL=%%i"
-if not defined GIT_EMAIL git config --local user.email "313672630+thcvaz22@users.noreply.github.com"
+echo [1/5] Clonando a versao atual do GitHub...
+git clone "%REPO%" "%TMP%"
+if errorlevel 1 goto :erro
 
-REM Evita que avisos de fim de linha sejam tratados como problema.
-git config --local core.autocrlf true >nul 2>nul
+echo [2/5] Copiando a v16.3 para o clone limpo...
+robocopy "%~dp0" "%TMP%" /E /R:1 /W:1 /XD ".git" "node_modules" "data" /XF ".env" "PRIMEIRO_ACESSO_ADMIN.txt" "*.db" "*.sqlite" "*.sqlite3" "*.key" >nul
+set RC=%ERRORLEVEL%
+if %RC% GEQ 8 goto :erro
 
-if not exist ".git" (
-  echo Inicializando repositorio local...
-  git init
-  if errorlevel 1 goto :giterror
-)
+cd /d "%TMP%"
+git config user.name "thcvaz22"
+git config user.email "thcvaz22@gmail.com"
 
-REM Reaplica a identidade depois do git init, caso seja um repositorio novo.
-git config --local user.name "thcvaz22"
-git config --local user.email "313672630+thcvaz22@users.noreply.github.com"
-git config --local core.autocrlf true
-
-git branch -M main >nul 2>nul
-
-git remote get-url origin >nul 2>nul
-if not errorlevel 1 git remote remove origin >nul 2>nul
-git remote add origin https://github.com/thcvaz22/Estoque-Life.git
-if errorlevel 1 goto :giterror
-
-echo Adicionando arquivos seguros...
-git add .
-if errorlevel 1 goto :giterror
+echo [3/5] Preparando alteracoes...
+git add -A
 
 git diff --cached --quiet
-if errorlevel 1 (
-  echo Criando commit...
-  git commit -m "Life Sucos v16.2 - login estavel + AION Skill 1.1 + Neon"
-  if errorlevel 1 goto :giterror
-) else (
-  git rev-parse --verify HEAD >nul 2>nul
-  if errorlevel 1 (
-    echo [ERRO] Nao existe commit para publicar.
-    goto :giterror
-  ) else (
-    echo Nenhuma alteracao nova para commit. Usando o commit existente.
-  )
+if not errorlevel 1 (
+  echo Nao ha alteracoes novas para publicar.
+  goto :sucesso
 )
 
-echo.
-echo Enviando para o GitHub...
-echo Se o navegador pedir autorizacao, entre na conta thcvaz22 e confirme.
-git push -u origin main
-if errorlevel 1 goto :pusherror
+echo [4/5] Criando commit...
+git commit -m "Life Sucos v16.3 - cloud estavel, disco persistente e Neon mirror"
+if errorlevel 1 goto :erro
 
+echo [5/5] Enviando para o GitHub...
+git push origin main
+if errorlevel 1 goto :erro
+
+:sucesso
 echo.
-echo ================================================
-echo PUBLICACAO CONCLUIDA COM SUCESSO
-echo ================================================
+echo ==============================================================
+echo PUBLICACAO/ATUALIZACAO CONCLUIDA COM SUCESSO
+echo ==============================================================
 echo Repositorio: https://github.com/thcvaz22/Estoque-Life
 echo.
+cd /d "%~dp0"
+rmdir /s /q "%TMP%" >nul 2>nul
 pause
 exit /b 0
 
-:giterror
+:erro
 echo.
-echo [ERRO] O Git nao conseguiu preparar o commit.
-echo Tire uma foto desta tela e me envie.
-pause
-exit /b 1
-
-:pusherror
+echo ==============================================================
+echo NAO FOI POSSIVEL CONCLUIR A ATUALIZACAO
+echo ==============================================================
+echo A pasta temporaria foi preservada para diagnostico:
+echo %TMP%
 echo.
-echo [ERRO] O GitHub nao aceitou o envio.
-echo Se abrir uma janela/navegador, conclua a autorizacao da conta thcvaz22.
-echo Depois execute este arquivo novamente.
-echo Se continuar, tire uma foto desta tela e me envie.
 pause
 exit /b 1

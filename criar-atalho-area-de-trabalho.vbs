@@ -25,9 +25,9 @@ shortcut.Arguments = Chr(34) & launcherPath & Chr(34)
 shortcut.WorkingDirectory = scriptDir
 If fso.FileExists(iconPath) Then shortcut.IconLocation = iconPath & ",0"
 shortcut.WindowStyle = 1
-shortcut.Description = "Abrir o Life Sucos Online - Controle de Estoque"
+shortcut.Description = "Abrir Life Sucos v18 - Servidor Local + AION Sync"
 shortcut.Save
 
 MsgBox "Atalho atualizado com sucesso!" & vbCrLf & vbCrLf & _
        "Agora basta clicar duas vezes em 'Life Sucos' na Area de Trabalho." & vbCrLf & _
-       "O sistema online sera aberto diretamente, sem depender do servidor local deste computador.", 64, "Life Sucos"
+       "O atalho abre o servidor local resiliente. A nuvem sera sincronizada automaticamente quando estiver disponivel.", 64, "Life Sucos"

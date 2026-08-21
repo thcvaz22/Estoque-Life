@@ -30,7 +30,7 @@ function friendlyListenError(err,port,label){
 function printBanner({ isNewDatabase, publicBaseUrl }){
   console.log('');
   console.log('════════════════════════════════════════════════════════');
-  console.log('   LIFE SUCOS · AION — v17.2 · Recebimento + Devoluções + Neon Primary');
+  console.log('   LIFE SUCOS · AION — v18.1 · AION Sync · Vendedores + Carteiras');
   console.log('════════════════════════════════════════════════════════');
   if(isNewDatabase) console.log('   Cache local criado nesta execução.');
   if(CLOUD_MODE){
@@ -63,6 +63,7 @@ async function main(){
 
   const { isNewDatabase } = require('./db');
   const { createApp } = require('./app');
+  const { startLocalSyncLoop } = require('./hybridSync');
   const { scheduleDailyBackups } = require('./cloudBackup');
   const app = createApp();
 
@@ -82,7 +83,7 @@ async function main(){
       server.removeListener('error',reject);
       printBanner({ isNewDatabase, publicBaseUrl: process.env.PUBLIC_BASE_URL || null });
       scheduleDailyBackups();
-      if(!CLOUD_MODE) startHttps(app);
+      if(!CLOUD_MODE){ startHttps(app); startLocalSyncLoop(); }
       resolve();
     });
   });
@@ -130,7 +131,7 @@ function startHttps(app){
 }
 
 main().catch(err=>{
-  console.error('\n[ERRO FATAL] Não foi possível iniciar o Life Sucos v17.2:', err.message);
+  console.error('\n[ERRO FATAL] Não foi possível iniciar o Life Sucos v18.1:', err.message);
   if(err.stack) console.error(err.stack);
   process.exit(1);
 });

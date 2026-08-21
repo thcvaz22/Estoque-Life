@@ -20,6 +20,7 @@ const path = require('path');
 const http = require('http');
 
 let server, baseUrl, dataDir, authCookie;
+const FUTURE_VALIDITY = '2099-12-31';
 
 test.before(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lifesucos-test-'));
@@ -43,12 +44,12 @@ test.after(async () => {
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
-async function get(p) {
-  const res = await fetch(baseUrl + p, { headers: { Cookie: authCookie } });
+async function get(p, cookie = authCookie) {
+  const res = await fetch(baseUrl + p, { headers: { Cookie: cookie } });
   return { status: res.status, body: await res.json().catch(() => null) };
 }
-async function post(p, payload) {
-  const res = await fetch(baseUrl + p, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: authCookie }, body: JSON.stringify(payload || {}) });
+async function post(p, payload, cookie = authCookie) {
+  const res = await fetch(baseUrl + p, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(payload || {}) });
   return { status: res.status, body: await res.json().catch(() => null) };
 }
 async function put(p, payload) {
@@ -75,7 +76,7 @@ test('entrada simples cria lote e soma ao estoque disponível', async () => {
   const prod = await createTestProduct('Produto Entrada Simples');
   const { status, body } = await post('/api/stock/entries', {
     fornecedor: 'Fornecedor A', data: '2026-01-01',
-    itens: [{ produtoId: prod, quantidade: 30, lote: 'L1' }]
+    itens: [{ produtoId: prod, quantidade: 30, lote: 'L1', validade: FUTURE_VALIDITY }]
   });
   assert.equal(status, 200);
   assert.equal(body.itens[0].quantidade, 30);
@@ -84,14 +85,14 @@ test('entrada simples cria lote e soma ao estoque disponível', async () => {
 
 test('entrada com múltiplos lotes soma corretamente', async () => {
   const prod = await createTestProduct('Produto Multi-Lote');
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 10, lote: 'A' }] });
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 15, lote: 'B' }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 10, lote: 'A', validade: FUTURE_VALIDITY }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 15, lote: 'B', validade: FUTURE_VALIDITY }] });
   assert.equal(await stockOf(prod), 25);
 });
 
 test('saída simples baixa o estoque disponível', async () => {
   const prod = await createTestProduct('Produto Saída Simples');
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 20 }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 20, validade: FUTURE_VALIDITY }] });
   const { status } = await post('/api/stock/exits', { motorista: 'M', cliente: 'C', nfs: [{ numero: '1', itens: [{ produtoId: prod, quantidade: 8 }] }] });
   assert.equal(status, 200);
   assert.equal(await stockOf(prod), 12);
@@ -99,7 +100,7 @@ test('saída simples baixa o estoque disponível', async () => {
 
 test('saída sem estoque suficiente é rejeitada (409) e nada muda', async () => {
   const prod = await createTestProduct('Produto Sem Estoque');
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 5 }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 5, validade: FUTURE_VALIDITY }] });
   const { status, body } = await post('/api/stock/exits', { motorista: 'M', cliente: 'C', nfs: [{ numero: '1', itens: [{ produtoId: prod, quantidade: 100 }] }] });
   assert.equal(status, 409);
   assert.match(body.error, /insuficiente/i);
@@ -109,7 +110,7 @@ test('saída sem estoque suficiente é rejeitada (409) e nada muda', async () =>
 test('saída com múltiplos produtos e falha em um deles não baixa NADA (atomicidade)', async () => {
   const prodA = await createTestProduct('Atomicidade A');
   const prodB = await createTestProduct('Atomicidade B');
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prodA, quantidade: 20 }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prodA, quantidade: 20, validade: FUTURE_VALIDITY }] });
   // prodB fica sem estoque nenhum
   const { status } = await post('/api/stock/exits', {
     motorista: 'M', cliente: 'C',
@@ -139,7 +140,7 @@ test('lote vencido nunca é usado em saída normal', async () => {
 
 test('retorno TOTAL de uma NF vira backlog e bloqueia o estoque', async () => {
   const prod = await createTestProduct('Retorno Total');
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 10 }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 10, validade: FUTURE_VALIDITY }] });
   const { body: exit } = await post('/api/stock/exits', { motorista: 'M', cliente: 'C', nfs: [{ numero: 'RT1', itens: [{ produtoId: prod, quantidade: 10 }] }] });
   const { status } = await post('/api/stock/backlog/return', { exitId: exit.id, motivo: 'teste', retornos: [{ nfNumero: 'RT1', produtoId: prod, quantidade: 10 }] });
   assert.equal(status, 200);
@@ -163,8 +164,8 @@ test('retorno PARCIAL distribui exatamente pelos lotes originais (soma sempre ba
 test('retorno por NF: só a NF selecionada vira backlog, a outra continua entregue', async () => {
   const prodA = await createTestProduct('NF Teste A');
   const prodB = await createTestProduct('NF Teste B');
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prodA, quantidade: 10 }] });
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prodB, quantidade: 20 }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prodA, quantidade: 10, validade: FUTURE_VALIDITY }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prodB, quantidade: 20, validade: FUTURE_VALIDITY }] });
   const { body: exit } = await post('/api/stock/exits', {
     motorista: 'M', cliente: 'C',
     nfs: [{ numero: '100', itens: [{ produtoId: prodA, quantidade: 10 }] }, { numero: '101', itens: [{ produtoId: prodB, quantidade: 20 }] }]
@@ -179,7 +180,7 @@ test('retorno por NF: só a NF selecionada vira backlog, a outra continua entreg
 
 test('reentrega baixa o BLOQUEADO e não mexe no disponível', async () => {
   const prod = await createTestProduct('Reentrega Teste');
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 20 }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 20, validade: FUTURE_VALIDITY }] });
   const { body: exit } = await post('/api/stock/exits', { motorista: 'M', cliente: 'C', nfs: [{ numero: '1', itens: [{ produtoId: prod, quantidade: 10 }] }] });
   const { body: backlogs } = await post('/api/stock/backlog/return', { exitId: exit.id, motivo: 't', retornos: [{ nfNumero: '1', produtoId: prod, quantidade: 10 }] });
   const dispAntes = await stockOf(prod, 'quantidadeDisponivel');
@@ -191,7 +192,7 @@ test('reentrega baixa o BLOQUEADO e não mexe no disponível', async () => {
 
 test('liberação de backlog baixa o bloqueado SEM aumentar o disponível', async () => {
   const prod = await createTestProduct('Liberacao Teste');
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 20 }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 20, validade: FUTURE_VALIDITY }] });
   const { body: exit } = await post('/api/stock/exits', { motorista: 'M', cliente: 'C', nfs: [{ numero: '1', itens: [{ produtoId: prod, quantidade: 10 }] }] });
   const { body: backlogs } = await post('/api/stock/backlog/return', { exitId: exit.id, motivo: 't', retornos: [{ nfNumero: '1', produtoId: prod, quantidade: 10 }] });
   const dispAntes = await stockOf(prod, 'quantidadeDisponivel');
@@ -203,7 +204,7 @@ test('liberação de backlog baixa o bloqueado SEM aumentar o disponível', asyn
 
 test('perda registra e baixa do estoque disponível', async () => {
   const prod = await createTestProduct('Perda Teste');
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 15 }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 15, validade: FUTURE_VALIDITY }] });
   const { status } = await post('/api/stock/losses', { produtoId: prod, quantidade: 5, motivo: 'Produto quebrado' });
   assert.equal(status, 200);
   assert.equal(await stockOf(prod), 10);
@@ -211,7 +212,7 @@ test('perda registra e baixa do estoque disponível', async () => {
 
 test('inventário com divergência gera ajuste identificado (rastreável no histórico)', async () => {
   const prod = await createTestProduct('Inventario Teste');
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 10 }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 10, validade: FUTURE_VALIDITY }] });
   const { status, body: inv } = await post('/api/stock/inventory-adjustment', {
     itens: [{ produtoId: prod, esperadoDisponivel: 10, contadoDisponivel: 7, esperadoBloqueado: 0, contadoBloqueado: 0 }]
   });
@@ -225,7 +226,7 @@ test('inventário com divergência gera ajuste identificado (rastreável no hist
 
 test('inventário com SOBRA (contado maior que o esperado) cria lote de ajuste identificado', async () => {
   const prod = await createTestProduct('Inventario Sobra');
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 5 }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 5, validade: FUTURE_VALIDITY }] });
   const { status, body: inv } = await post('/api/stock/inventory-adjustment', {
     itens: [{ produtoId: prod, esperadoDisponivel: 5, contadoDisponivel: 9, esperadoBloqueado: 0, contadoBloqueado: 0 }]
   });
@@ -238,7 +239,7 @@ test('inventário com SOBRA (contado maior que o esperado) cria lote de ajuste i
 
 test('NF-e com a mesma chave não pode ser importada duas vezes', async () => {
   const prod = await createTestProduct('NFe Duplicada');
-  const payload = { fornecedor: 'F', chaveNFe: 'CHAVE-UNICA-TESTE', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 5 }] };
+  const payload = { fornecedor: 'F', chaveNFe: 'CHAVE-UNICA-TESTE', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 5, validade: FUTURE_VALIDITY }] };
   const r1 = await post('/api/stock/entries', payload);
   const r2 = await post('/api/stock/entries', { ...payload, itens: [{ produtoId: prod, quantidade: 999 }] });
   assert.equal(r1.status, 200);
@@ -248,7 +249,7 @@ test('NF-e com a mesma chave não pode ser importada duas vezes', async () => {
 
 test('produto desativado não pode ser excluído fisicamente após ter movimentação', async () => {
   const prod = await createTestProduct('Produto Desativado');
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 5 }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 5, validade: FUTURE_VALIDITY }] });
   const { status: statusDeact } = await post(`/api/stock/products/${prod}/deactivate`, {});
   assert.equal(statusDeact, 200);
   const { status: statusDel } = await del(`/api/products/${prod}`);
@@ -257,7 +258,7 @@ test('produto desativado não pode ser excluído fisicamente após ter movimenta
 
 test('idempotência: mesma operationId enviada duas vezes só executa uma vez', async () => {
   const prod = await createTestProduct('Idempotencia Teste');
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 50 }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 50, validade: FUTURE_VALIDITY }] });
   const opId = 'op-teste-fixo-' + prod;
   const r1 = await post('/api/stock/losses', { operationId: opId, produtoId: prod, quantidade: 3, motivo: 'Produto quebrado' });
   const r2 = await post('/api/stock/losses', { operationId: opId, produtoId: prod, quantidade: 3, motivo: 'Produto quebrado' });
@@ -267,7 +268,7 @@ test('idempotência: mesma operationId enviada duas vezes só executa uma vez', 
 
 test('estoque nunca fica negativo mesmo tentando saída maior que o disponível', async () => {
   const prod = await createTestProduct('Nunca Negativo');
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 10 }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 10, validade: FUTURE_VALIDITY }] });
   await post('/api/stock/exits', { motorista: 'M', cliente: 'C', nfs: [{ numero: '1', itens: [{ produtoId: prod, quantidade: 999 }] }] });
   const estoque = await stockOf(prod);
   assert.ok(estoque >= 0, `estoque não pode ser negativo, era ${estoque}`);
@@ -276,7 +277,7 @@ test('estoque nunca fica negativo mesmo tentando saída maior que o disponível'
 
 test('CONCORRÊNCIA: duas saídas simultâneas de 15 num estoque de 20 — só uma pode ter sucesso', async () => {
   const prod = await createTestProduct('Concorrencia Teste');
-  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 20 }] });
+  await post('/api/stock/entries', { fornecedor: 'F', data: '2026-01-01', itens: [{ produtoId: prod, quantidade: 20, validade: FUTURE_VALIDITY }] });
 
   const [r1, r2] = await Promise.all([
     post('/api/stock/exits', { motorista: 'A', cliente: 'C', nfs: [{ numero: 'CC1', itens: [{ produtoId: prod, quantidade: 15 }] }] }),
@@ -300,9 +301,13 @@ test('CRUD genérico bloqueia escrita direta em coleções críticas (lots, exit
 });
 
 test('backup/restore: restauração inválida não apaga os dados existentes', async () => {
-  const before = await get('/api/backup');
-  const r = await post('/api/restore', { lots: 'não deveria ser uma string' });
+  const login = await fetch(baseUrl + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: 'TestAdmin-v15-Only' }) });
+  assert.equal(login.status, 200);
+  const managerCookie = (login.headers.get('set-cookie') || '').split(';')[0];
+  assert.ok(managerCookie);
+  const before = await get('/api/backup', managerCookie);
+  const r = await post('/api/restore', { lots: 'não deveria ser uma string' }, managerCookie);
   assert.equal(r.status, 400);
-  const after = await get('/api/backup');
+  const after = await get('/api/backup', managerCookie);
   assert.equal(after.body.products.length, before.body.products.length);
 });

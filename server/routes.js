@@ -19,7 +19,7 @@ const { createDatabaseBackup } = require('./cloudBackup');
 const { searchAll } = require('./globalSearch');
 
 const router = express.Router();
-const SYSTEM_VERSION = '17.2.0-neon-primary-render-free-recebimento-fiscal-aion-1.1';
+const SYSTEM_VERSION = '18.1.0-aion-sync-hybrid-sellers-portfolios-password-change';
 const { getCloudPersistenceStatus } = require('./cloudPersistence');
 
 
@@ -94,9 +94,13 @@ router.get('/search', (req, res) => {
   res.json(results);
 });
 
-/* ---------- Histórico administrativo: somente Administrador ---------- */
-router.get('/history', requireAdministratorRoute, (req, res) => {
-  res.json(Data.all('history').sort((a,b) => String(b.timestamp || '').localeCompare(String(a.timestamp || ''))));
+/* ---------- Histórico: completo para Administrador; próprio para demais usuários ---------- */
+router.get('/history', (req, res) => {
+  const actor = currentUser(req);
+  const rows = Data.all('history')
+    .filter(row => isAdministrator(req) || row.usuario === actor)
+    .sort((a,b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
+  res.json(rows);
 });
 router.put('/lots/:id', (req, res) => {
   res.status(403).json({ error: 'Lotes não podem ser alterados diretamente. Use "Fazer ajuste de estoque" (POST /api/stock/adjust) ou edite os dados do lote em PUT /api/stock/lots/:id/meta.' });

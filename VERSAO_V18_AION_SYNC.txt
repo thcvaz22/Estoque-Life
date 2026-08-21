@@ -1,0 +1,2 @@
+Life Sucos v18.0.0 — AION Sync
+Operação híbrida: servidor local + nuvem + vendedor offline.

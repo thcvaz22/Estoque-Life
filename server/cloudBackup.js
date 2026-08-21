@@ -10,6 +10,13 @@ const { db, DATA_DIR } = require('./db');
 
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const RETENTION_DAYS = Number(process.env.BACKUP_RETENTION_DAYS || 14);
+const DEVICE_FILE = path.join(DATA_DIR,'aion-sync-device.json');
+function secondaryBackupDir(){
+  if(process.env.LIFE_SECONDARY_BACKUP_DIR)return String(process.env.LIFE_SECONDARY_BACKUP_DIR);
+  try{if(fs.existsSync(DEVICE_FILE))return String(JSON.parse(fs.readFileSync(DEVICE_FILE,'utf8')).secondaryBackupDir||'');}catch{}
+  return '';
+}
+function mirrorBackup(file){const dir=secondaryBackupDir();if(!dir)return;try{fs.mkdirSync(dir,{recursive:true});fs.copyFileSync(file,path.join(dir,path.basename(file)));}catch(err){console.warn('[backup] cópia secundária:',err.message);}}
 
 function stamp(){
   const d = new Date();
@@ -30,6 +37,7 @@ async function createDatabaseBackup(reason='manual'){
   const target = path.join(BACKUP_DIR,`lifesucos_${stamp()}_${reason}.db`);
   await db.backup(target);
   cleanupOldBackups();
+  mirrorBackup(target);
   return target;
 }
 function scheduleDailyBackups(){

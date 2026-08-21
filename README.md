@@ -105,3 +105,14 @@ O pacote v17.2 passou por verificação de sintaxe de todos os JavaScripts e pel
 
 ### Relatórios de Romaneios (v17.2)
 Na aba **Relatórios**, a opção **Romaneios** reúne documentos de **Entrada** e **Saída**. É possível filtrar o histórico e clicar em **Emitir / PDF** para gerar novamente o romaneio de conferência de recebimento ou abrir o romaneio de separação/expedição já salvo.
+
+
+## v18.0 — AION Sync / Operação Híbrida
+
+O depósito opera no servidor local mesmo quando internet, Render ou nuvem estão indisponíveis. As mutações locais entram em uma fila persistente e são reproduzidas na nuvem com idempotência quando a conexão retorna. O Life Vendas mantém cache e fila IndexedDB para novos pedidos/clientes offline. Conflitos são preservados para revisão, nunca descartados silenciosamente.
+
+## v18.1 — Vendedores e carteiras iniciais
+
+A v18.1 pré-cadastra 5 vendedores e 284 clientes extraídos dos relatórios de último pedido enviados em 20/08/2026. O login do vendedor aceita o nome completo ou o usuário normalizado. Os clientes importados entram como `pre_cadastro`, com vendedor responsável e `ultimaCompra`, mas permanecem bloqueados para pedidos até a complementação dos dados e aprovação/classificação.
+
+O Life Vendas também ganhou **Minha conta → Trocar senha**. A troca exige a senha atual, confirmação da nova senha e conexão com o servidor. Em operação híbrida local, a alteração entra na fila AION Sync de usuários para chegar à nuvem; em nuvem, a escrita é confirmada no Neon antes da resposta.

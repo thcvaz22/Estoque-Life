@@ -168,22 +168,123 @@ function findSharedProduct(message){
   for(const p of products){const n=norm(`${p.nome||''} ${p.sabor||''} ${p.volume||''} ${p.embalagem||''}`),tokens=n.split(' ').filter(x=>x.length>3),score=tokens.reduce((a,t)=>a+(q.includes(t)?1:0),0);if(score>bestScore){bestScore=score;best=p;}}
   return bestScore>=2?best:null;
 }
-function dataAnswer(req,message,scope='operational'){
+
+function normalizeHistory(history){
+  if(!Array.isArray(history)) return [];
+  return history.slice(-10).map(x=>({role:x?.role==='assistant'?'assistant':'user',content:String(x?.content||x?.text||'').slice(0,1200)})).filter(x=>x.content.trim());
+}
+function conversationProbe(message,history=[]){
+  return [...normalizeHistory(history).map(x=>x.content),String(message||'')].join(' \n ');
+}
+function packagingKey(p){return `${Number(p?.unidadesPorFardo||p?.qtdPorEmbalagem||1)}|${Number(p?.fardosPorPalete||0)}|${p?.nomeFardo||'Fardo'}`;}
+function productForConversion(message,history=[]){
+  const probe=conversationProbe(message,history);
+  const direct=findSharedProduct(probe); if(direct) return {product:direct,label:direct.nome||'Produto'};
+  const q=norm(probe),products=docs('products').filter(p=>p.ativo!==false);
+  const code=(q.match(/\b\d{3,}\b/g)||[]).reverse().find(c=>products.some(p=>String(p.codigoInterno||'')===c||String(p.codigoBarras||'')===c));
+  if(code){const product=products.find(p=>String(p.codigoInterno||'')===code||String(p.codigoBarras||'')===code);return {product,label:product.nome||`produto ${code}`};}
+  const vm=[...q.matchAll(/\b(\d+(?:[.,]\d+)?)\s*(ml|l)\b/g)].at(-1);
+  if(vm){
+    const raw=`${vm[1]}${vm[2]}`.replace(',','.');
+    const targetMl=vm[2]==='l'?Number(vm[1].replace(',','.'))*1000:Number(vm[1].replace(',','.'));
+    const matches=products.filter(p=>{
+      const pv=norm(p.volume||'').replace(',','.').replace(/\s+/g,'');
+      const ml=Number(p.volumeMl||0)||(/ml$/.test(pv)?Number(pv.replace('ml','')):/l$/.test(pv)?Number(pv.replace('l',''))*1000:0);
+      return ml===targetMl;
+    });
+    if(matches.length){const keys=new Set(matches.map(packagingKey));if(keys.size===1)return {product:matches[0],label:`linha ${vm[1].replace('.',',')} ${vm[2]}`};}
+  }
+  if(/\bbag\b/.test(q)){
+    const matches=products.filter(p=>norm(p.embalagem)==='bag');
+    if(matches.length&&new Set(matches.map(packagingKey)).size===1)return {product:matches[0],label:'produtos Bag'};
+  }
+  return null;
+}
+function unitKind(raw){
+  const u=norm(raw);
+  if(/unidade|\bun\b|\bund\b/.test(u))return 'unit';
+  if(/meio.*pal|1\/2.*pal/.test(u))return 'half';
+  if(/pallet|palete/.test(u))return 'pallet';
+  if(/fardo|caixa|\bcx\b|\bfd\b/.test(u))return 'pack';
+  return null;
+}
+function unitLabel(kind,product,count=2){
+  if(kind==='unit')return count===1?'unidade':'unidades';
+  if(kind==='pallet')return count===1?'pallet':'pallets';
+  if(kind==='half')return 'meio pallet';
+  const n=product?.nomeFardo||'Fardo';return count===1?n.toLowerCase():`${n.toLowerCase()}s`;
+}
+function parseConversionRequest(message,history=[]){
+  const current=String(message||''), q=norm(current), prior=conversationProbe('',history);
+  const conversionWords=/converter|converta|convert|equivale|equivalem|transform|quant[oa]s?|em\s+(?:fard|caix|pallet|palet|unidade)|para\s+(?:fard|caix|pallet|palet|unidade)/.test(q);
+  if(!conversionWords)return null;
+  const qm=[...current.matchAll(/\b(\d+(?:[.,]\d+)?)\s*(unidades?|un\b|und\b|fardos?|fd\b|caixas?|cx\b|pallets?|paletes?|meio\s+pallet|meio\s+palete|1\/2\s*pallet|1\/2\s*palete)?/gi)]
+    .filter(m=>Number.isFinite(Number(m[1].replace(',','.'))));
+  let amount=null,from=null;
+  for(const m of qm){const k=unitKind(m[2]||'');if(k){amount=Number(m[1].replace(',','.'));from=k;break;}}
+  if(amount===null && qm.length){
+    const m=qm[0]; amount=Number(m[1].replace(',','.'));
+  }
+  const targetMatch=current.match(/(?:em|para)\s+(unidades?|un\b|und\b|fardos?|fd\b|caixas?|cx\b|pallets?|paletes?|meio\s+pallet|meio\s+palete)/i);
+  let to=unitKind(targetMatch?.[1]||'');
+  if(!to){
+    if(/quant[oa]s?\s+(?:fard|caix)/.test(q)||/\bem\s+(?:fard|caix)/.test(q))to='pack';
+    else if(/quant[oa]s?\s+(?:pallet|palet)/.test(q))to='pallet';
+    else if(/quant[oa]s?\s+unidade/.test(q))to='unit';
+  }
+  // continuação: "e em caixas?" reaproveita quantidade/unidade anterior
+  if((amount===null||!from) && history.length){
+    for(const h of [...normalizeHistory(history)].reverse()){
+      if(h.role!=='user')continue;
+      const old=parseConversionRequest(h.content,[]);
+      if(old){amount=amount??old.amount;from=from||old.from;break;}
+    }
+  }
+  if(amount!==null && !from && to) from=to==='unit'?'pack':'unit';
+  return {amount,from,to};
+}
+function packagingReference(message,history=[]){
+  const q=norm(message);
+  if(!/(quantas?.*unidades?.*(?:fardo|caixa)|unidades?.*por.*(?:fardo|caixa)|quantos?.*(?:fardos|caixas).*pallet|como.*embalad|embalagem)/.test(q))return null;
+  const hit=productForConversion(message,history);
+  if(hit){const p=hit.product,upf=Number(p.unidadesPorFardo||p.qtdPorEmbalagem||1),fpp=Number(p.fardosPorPalete||0),name=p.nomeFardo||'Fardo';return {reply:`${hit.label}: cada ${name.toLowerCase()} tem ${upf} unidade(s)${fpp?` e cada pallet tem ${fpp} ${name.toLowerCase()}(s), totalizando ${upf*fpp} unidades.`:'.'}`,source:'local-calculator'};}
+  return {reply:'Na configuração padrão da Life: 300 ml = 24 un./fardo; 900 ml = 12; 1,5 L = 6; 2,5 L e 3,5 L = 4; produtos Bag = 7 un./caixa. Para pallet, a quantidade de fardos/caixas depende do tamanho. Se você citar o produto, código ou volume, eu faço a conversão exata na hora.',source:'local-calculator'};
+}
+function conversionAnswer(message,history=[]){
+  const ref=packagingReference(message,history); if(ref)return ref;
+  const r=parseConversionRequest(message,history); if(!r||r.amount===null||!r.from||!r.to||r.from===r.to)return null;
+  const hit=productForConversion(message,history);
+  if(!hit)return {reply:'Faço essa conta na hora. Só preciso identificar qual produto ou tamanho você está usando, porque a quantidade por fardo/caixa muda. Pode citar, por exemplo, “código 100”, “300 ml”, “900 ml” ou “Bag”.',source:'local-calculator'};
+  const p=hit.product,upf=Number(p.unidadesPorFardo||p.qtdPorEmbalagem||1),fpp=Number(p.fardosPorPalete||0),perPallet=upf*fpp;
+  const factor={unit:1,pack:upf,pallet:perPallet,half:perPallet/2};
+  if((r.from==='pallet'||r.from==='half'||r.to==='pallet'||r.to==='half')&&!fpp)return {reply:`${hit.label} não tem a quantidade por pallet configurada. Consigo converter normalmente entre unidades e ${unitLabel('pack',p)} usando ${upf} unidades por ${unitLabel('pack',p,1)}.`,source:'local-calculator'};
+  const baseUnits=r.amount*factor[r.from], result=baseUnits/factor[r.to];
+  const fromLabel=unitLabel(r.from,p,r.amount),toLabel=unitLabel(r.to,p,result);
+  let detail='';
+  if(r.to==='pack'&&!Number.isInteger(result)){const full=Math.floor(result),rem=Math.round((baseUnits-full*upf)*100)/100;detail=` Isso dá ${full} ${unitLabel('pack',p,full)} completos + ${rem} ${unitLabel('unit',p,rem)}.`;}
+  else if(r.to==='pallet'&&!Number.isInteger(result)){const full=Math.floor(result),remUnits=baseUnits-full*perPallet,fullPacks=Math.floor(remUnits/upf),loose=Math.round((remUnits-fullPacks*upf)*100)/100;if(full===0){const missing=Math.max(0,perPallet-baseUnits),missingPacks=Math.ceil(missing/upf);detail=` Ainda não fecha 1 pallet: isso corresponde a ${fullPacks} ${unitLabel('pack',p,fullPacks)}${loose?` + ${loose} unidade(s)`:''}. Faltam ${missing} unidades (aprox. ${missingPacks} ${unitLabel('pack',p,missingPacks)}) para completar 1 pallet.`;}else{detail=` Na prática: ${full} pallet(s) completo(s), ${fullPacks} ${unitLabel('pack',p,fullPacks)} e ${loose} unidade(s) restantes.`;}}
+  const rule=r.to==='unit'?`${upf} un. por ${unitLabel('pack',p,1)}${fpp?` · ${fpp} ${unitLabel('pack',p)} por pallet`:''}`:r.to==='pack'?`${upf} un. por ${unitLabel('pack',p,1)}`:fpp?`${fpp} ${unitLabel('pack',p)} por pallet · ${perPallet} un. por pallet`:'';
+  const shown=Number.isInteger(result)?String(result):result.toLocaleString('pt-BR',{maximumFractionDigits:result<1?3:2});
+  return {reply:`${r.amount.toLocaleString('pt-BR')} ${fromLabel} de ${hit.label} = ${shown} ${toLabel}.${detail}${rule?` Regra cadastrada: ${rule}.`:''}`,source:'local-calculator',calculation:{productId:p.id,amount:r.amount,from:r.from,to:r.to,result,unitsPerPack:upf,packsPerPallet:fpp}};
+}
+
+function dataAnswer(req,message,scope='operational',history=[]){
+  const conversion=conversionAnswer(message,history); if(conversion) return conversion;
   const q=norm(message),orders=visibleOrders(req),customers=activeCustomers(req),range=rangeFor(message);
   const customer=findSharedCustomer(req,message);
   if(customer&&/(comprou|compras|gastou|quanto|quantos|valor|pediu)/.test(q)){
     const rows=inQueryRange(orders.filter(o=>o.clienteId===customer.id||norm(o.clienteNome)===norm(customer.nome||customer.nomeFantasia||customer.razaoSocial)),range||(/mes/.test(q)?{from:firstDayOfMonth(),to:today(),label:'este mês'}:null));
     const confirmed=salesOrders(rows),total=confirmed.reduce((a,o)=>a+Number(o.total||0),0);
-    return {reply:`${customer.nome||customer.nomeFantasia||customer.razaoSocial} comprou ${money(total)} em ${confirmed.length} pedido(s) confirmado(s) ${range?.label||(/mes/.test(q)?'este mês':'no período disponível')}.`,source:'local-data'};
+    return {reply:`${customer.nome||customer.nomeFantasia||customer.razaoSocial} comprou ${money(total)} em ${confirmed.length} pedido(s) confirmado(s) ${range?.label||(/mes/.test(q)?'este mês':'no período disponível')}.${confirmed.length?` Ticket médio aproximado: ${money(total/confirmed.length)}.`:''} Se quiser, eu também consigo comparar esse cliente com o período anterior ou mostrar os produtos que ele mais comprou.`,source:'local-data'};
   }
-  if((/quanto|total|valor|fatur/.test(q))&&(/vendi|vendido|vendas|faturamento/.test(q))){const rows=salesOrders(inQueryRange(orders,range)),total=rows.reduce((a,o)=>a+Number(o.total||0),0);return {reply:`Há ${rows.length} pedido(s) confirmado(s) ${range?.label||'no período visível'}, somando ${money(total)}.`,source:'local-data'};}
-  if(/melhor cliente|maior cliente|cliente que mais/.test(q)){const by={};for(const o of salesOrders(inQueryRange(orders,range)))by[o.clienteNome]=(by[o.clienteNome]||0)+Number(o.total||0);const top=topEntries(by,1)[0];return {reply:top?`${top[0]} é o cliente com maior volume ${range?.label||'no período analisado'}, com ${money(top[1])}.`:'Ainda não há vendas confirmadas suficientes para calcular o maior cliente.',source:'local-data'};}
-  if(/produto.*mais vendido|mais vendido|maior saida|maior saída|produto que mais/.test(q)){const by={};for(const o of salesOrders(inQueryRange(orders,range)))for(const i of (o.itens||[])){const n=i.produtoNome||'Produto';by[n]=(by[n]||0)+Number(i.quantidadeUnidades||i.quantidade||0);}const top=topEntries(by,1)[0];return {reply:top?`${top[0]} é o produto com maior saída ${range?.label||'no período analisado'}, com ${top[1]} unidade(s).`:'Ainda não há vendas confirmadas suficientes para calcular o produto de maior saída.',source:'local-data'};}
+  if((/quanto|total|valor|fatur/.test(q))&&(/vendi|vendido|vendas|faturamento/.test(q))){const rows=salesOrders(inQueryRange(orders,range)),total=rows.reduce((a,o)=>a+Number(o.total||0),0),ticket=rows.length?total/rows.length:0;return {reply:`Você tem ${rows.length} pedido(s) confirmado(s) ${range?.label||'no período visível'}, somando ${money(total)}.${rows.length?` O ticket médio está em ${money(ticket)}.`:''} Posso comparar com o mês anterior se você quiser entender se houve crescimento ou queda.`,source:'local-data'};}
+  if(/melhor cliente|maior cliente|cliente que mais/.test(q)){const by={};for(const o of salesOrders(inQueryRange(orders,range)))by[o.clienteNome]=(by[o.clienteNome]||0)+Number(o.total||0);const ranking=topEntries(by,3),top=ranking[0];return {reply:top?`${top[0]} lidera ${range?.label||'no período analisado'}, com ${money(top[1])}.${ranking.length>1?` Depois vêm ${ranking.slice(1).map(([n,v])=>`${n} (${money(v)})`).join(' e ')}.`:''} Isso ajuda a enxergar concentração da carteira; posso calcular a participação desses clientes no total.`:'Ainda não há vendas confirmadas suficientes para calcular o maior cliente.',source:'local-data'};}
+  if(/produto.*mais vendido|mais vendido|maior saida|maior saída|produto que mais/.test(q)){const by={};for(const o of salesOrders(inQueryRange(orders,range)))for(const i of (o.itens||[])){const n=i.produtoNome||'Produto';by[n]=(by[n]||0)+Number(i.quantidadeUnidades||i.quantidade||0);}const ranking=topEntries(by,3),top=ranking[0];return {reply:top?`${top[0]} é o produto de maior saída ${range?.label||'no período analisado'}, com ${top[1]} unidades.${ranking.length>1?` Na sequência: ${ranking.slice(1).map(([n,v])=>`${n} (${v} un.)`).join(' e ')}.`:''} Se quiser, converto essas quantidades para fardos/caixas ou pallets.`:'Ainda não há vendas confirmadas suficientes para calcular o produto de maior saída.',source:'local-data'};}
   if(/status.*pedido|pedido.*status|como esta.*pedido|como está.*pedido|situacao.*pedido|situação.*pedido/.test(q)){const n=(String(message).match(/(?:PED)?\s*0*(\d{1,6})/i)||[])[1],o=n?orders.find(x=>String(x.numero||'').replace(/\D/g,'').endsWith(String(n))):null;return {reply:o?`O pedido ${o.numero} de ${o.clienteNome} está com status “${o.status}”. Valor: ${money(o.total)}.`:'Não encontrei esse pedido entre os dados que seu usuário pode visualizar.',source:'local-data'};}
   if(/quantos?.*refazer|pedido.*refazer|refazer.*pedido/.test(q))return {reply:`Há ${orders.filter(o=>o.status==='refazer').length} pedido(s) aguardando correção.`,source:'local-data'};
-  if(/quantos? clientes?|minha carteira|clientes cadastrados/.test(q))return {reply:`Seu usuário tem acesso a ${customers.length} cliente(s), sendo ${customers.filter(c=>c.statusAprovacao==='aprovado').length} aprovado(s).`,source:'local-data'};
+  if(/quantos? clientes?|minha carteira|clientes cadastrados/.test(q)){const approved=customers.filter(c=>c.statusAprovacao==='aprovado').length,pending=customers.filter(c=>c.statusAprovacao==='pendente').length;return {reply:`Sua carteira tem ${customers.length} cliente(s): ${approved} aprovado(s)${pending?` e ${pending} aguardando aprovação`:''}. Posso também separar quem ainda não comprou, quem mais compra ou quais clientes merecem contato primeiro.`,source:'local-data'};}
   const product=findSharedProduct(message);
-  if(product&&/estoque|quanto tem|disponivel|disponível|quantidade/.test(q)){const inv=inventorySummary(),x=inv.by.get(product.id)||{available:0,blocked:0};return {reply:`${product.nome}: ${x.available} unidade(s) disponíveis e ${x.blocked} bloqueada(s).`,source:'local-data'};}
+  if(product&&/estoque|quanto tem|disponivel|disponível|quantidade/.test(q)){const inv=inventorySummary(),x=inv.by.get(product.id)||{available:0,blocked:0},upf=Number(product.unidadesPorFardo||product.qtdPorEmbalagem||1),pack=product.nomeFardo||'Fardo';const eq=upf>1?` Isso equivale a ${Math.floor(x.available/upf)} ${pack.toLowerCase()}(s) completo(s)${x.available%upf?` + ${x.available%upf} unidade(s)`:''}.`:'';return {reply:`${product.nome}: ${x.available} unidade(s) disponíveis e ${x.blocked} bloqueada(s).${eq} Se quiser, eu também converto para pallet ou verifico se está abaixo do mínimo.`,source:'local-data'};}
   if(/estoque/.test(q)&&/(zerado|sem estoque|abaixo|minimo|mínimo|critico|crítico)/.test(q)){const inv=inventorySummary();return {reply:`Neste momento há ${inv.zero.length} produto(s) sem estoque disponível e ${inv.low.length} abaixo do estoque mínimo.${scope==='sales'?' Considere isso antes de fechar pedidos grandes.':' Priorize reposição dos itens recorrentes e revise o backlog antes de liberar estoque.'}`,source:'local-data'};}
   return null;
 }
@@ -197,7 +298,7 @@ function status(){
     externalAI:enabled,
     webSearch:web,
     model:enabled?(process.env.AION_MODEL||'gpt-5-mini'):null,
-    mode:enabled?(web?'local + IA externa + web':'local + IA externa'):'inteligência local',
+    mode:enabled?(web?'conversacional + IA externa + web':'conversacional + IA externa'):'conversacional local',
     skill:AionSkill.publicSummary(),
     marketAwareness:true,
     advancedAnalytics:true
@@ -226,6 +327,13 @@ function howTo(message,scope='operational'){
   if(/barra.*busca|pesquis|buscar|localizar/.test(q)) return 'A busca superior é global: pesquise por número de pedido, NF, produto/código, cliente, entrada, saída, backlog, lote ou fornecedor. Digite parte do número ou nome e abra o resultado correspondente. Para pedido/NF, normalmente só os últimos dígitos já são suficientes.';
   if(/pagamento|boleto|pix|dinheiro/.test(q)) return 'Formas de pagamento: Pix, Dinheiro e Boleto conforme classificação do cliente. Verde pode usar boleto; Amarelo fica restrito a Pix/Dinheiro. Boleto de R$150 a R$299,99 usa 7 dias e a partir de R$300 usa 14 dias.';
   if(/tabela.*preco|tabela.*preço|preco|preço/.test(q)) return 'Use Tabelas de Preço para padronizar a venda e reduzir digitação. Mantenha uma tabela-base por perfil de cliente e use tabela personalizada apenas quando houver acordo específico. Isso melhora margem, consistência comercial e auditoria.';
+  if(/aprovar.*pedido|pedido.*aprovad|o que acontece.*pedido/.test(q)) return 'Quando um pedido é aprovado pela operação, ele passa a valer no fluxo operacional: a reserva deixa de ser apenas comercial, o estoque é efetivamente tratado pelo fluxo de saída e o pedido fica disponível para separação/romaneio. A AION não aprova silenciosamente por você; essa etapa continua exigindo a ação autorizada do operador/gerente.';
+  if(/estoque.*bloquead|bloquead.*estoque|disponivel.*bloquead|disponível.*bloquead/.test(q)) return 'Estoque disponível é o que pode entrar normalmente em novas movimentações/vendas. Estoque bloqueado existe fisicamente, mas não deve ser prometido como disponível — normalmente porque veio de backlog, devolução ou outra situação que precisa de decisão. Separar os dois evita vender um produto que ainda está pendente de liberação.';
+  if(/validade|40 dias|vencimento/.test(q)) return 'Nas entradas, o Life sugere validade de 40 dias após a chegada como padrão operacional, mas o campo é editável. A data real do lote deve prevalecer sempre que estiver disponível na embalagem, NF ou conferência física.';
+  if(/verde|amarelo|classifica.*cliente/.test(q)) return 'A classificação controla principalmente a condição comercial: cliente Verde pode usar Pix, Dinheiro e Boleto; cliente Amarelo fica em Pix e Dinheiro. No boleto, R$150 a R$299,99 usa 7 dias e R$300 ou mais usa 14 dias. Essa regra fica centralizada para evitar condição incorreta no pedido.';
+  if(/ocr|foto.*romaneio|foto.*nota|ler.*foto/.test(q)) return 'O OCR serve para acelerar digitação, não para substituir conferência. Em NF/romaneio por foto, o sistema tenta identificar produto, quantidade, cliente/entregador e outros campos, mas mostra o resultado para revisão antes de qualquer movimentação definitiva.';
+  if(/o que.*aion|aion.*faz|o que voce consegue|o que você consegue|como pode ajudar/.test(q)) return 'Pode me usar como um copiloto do Life. Eu explico telas e regras, respondo dúvidas de processo, consulto os dados que seu perfil pode enxergar, faço contas e conversões de embalagem, preparo relatórios/rascunhos, analiso indicadores e sugiro prioridades. Quando a conexão externa está ativa, também comparo a operação com tendências e referências do mercado.';
+  if(/senha|trocar.*senha|minha conta/.test(q)&&sales) return 'No Life Vendas, abra Minha conta → Trocar senha. Informe a senha atual, digite a nova senha duas vezes e salve. Depois da alteração o sistema encerra a sessão para você entrar novamente com a nova senha.';
   return null;
 }
 
@@ -295,6 +403,11 @@ function safeContext(req,scope){
     perfil:req?.authUser?.perfil||'usuário',
     setor:'distribuição de sucos e bebidas no Brasil',
     aionSkill:AionSkill.publicSummary(),
+    conhecimentoSistema:{
+      modulos:scope==='sales'?['Painel','Clientes','Novo pedido','Pedidos','Relatórios','Minha conta','AION IA']:['Dashboard','Produtos','Entradas','Saídas','Backlog','Inventário','Avarias/Perdas','Clientes','Pedidos','Separação/Romaneio','Notas Fiscais','Relatórios','Configurações','AION IA'],
+      regras:['Cliente Verde: Pix, Dinheiro e Boleto','Cliente Amarelo: Pix e Dinheiro','Boleto R$150–299,99: 7 dias; R$300+: 14 dias','Validade sugerida em entradas: 40 dias, editável','Backlog retorna itens não entregues para estoque bloqueado'],
+      logisticaProdutos:docs('products').filter(p=>p.ativo!==false).slice(0,80).map(p=>({codigo:p.codigoInterno,nome:p.nome,volume:p.volume,embalagem:p.embalagem,unidadesPorFardo:Number(p.unidadesPorFardo||p.qtdPorEmbalagem||1),nomeFardo:p.nomeFardo||'Fardo',fardosPorPalete:Number(p.fardosPorPalete||0)}))
+    },
     indicadoresAgregados:{
       vendasConfirmadasMes:sales.length,
       faturamentoPedidosMes:Number(revenue.toFixed(2)),
@@ -321,14 +434,15 @@ function extractOutputText(data){
   for(const item of (data?.output||[])) for(const c of (item?.content||[])) if(c?.type==='output_text'&&c.text) parts.push(c.text);
   return parts.join('\n').trim();
 }
-async function externalAnswer({req,message,scope='operational',forceWeb=false}){
+async function externalAnswer({req,message,scope='operational',forceWeb=false,history=[]}){
   const st=status(); if(!st.externalAI) return null;
   const useWeb=!!(st.webSearch&&(forceWeb||wantsExternalWeb(message)||isManagementQuestion(message)));
   const context=safeContext(req,scope);
   const instructions=AionSkill.systemInstructions({scope,useWeb});
+  const recentHistory=normalizeHistory(history);
   const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),22000);
   try{
-    const body={model:process.env.AION_MODEL||'gpt-5-mini',store:false,input:`${instructions}\n\nContexto seguro do sistema: ${JSON.stringify(context)}\n\nPergunta do usuário: ${String(message||'').slice(0,4000)}`};
+    const body={model:process.env.AION_MODEL||'gpt-5-mini',store:false,input:`${instructions}\n\nContexto seguro do sistema: ${JSON.stringify(context)}\n\nHistórico recente da conversa: ${JSON.stringify(recentHistory)}\n\nPergunta atual do usuário: ${String(message||'').slice(0,4000)}`};
     if(useWeb) body.tools=[{type:'web_search'}];
     const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{'Authorization':`Bearer ${process.env.OPENAI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
     const data=await r.json().catch(()=>({}));
@@ -341,22 +455,27 @@ async function externalAnswer({req,message,scope='operational',forceWeb=false}){
   }finally{clearTimeout(timer);}
 }
 
-async function unifiedFallback({req,message,scope='operational'}){
-  const help=howTo(message,scope); if(help) return {reply:help,source:'local-knowledge'};
+async function unifiedFallback({req,message,scope='operational',history=[]}){
+  const help=howTo(message,scope);
+  if(help){
+    const external=await externalAnswer({req,message:`Pergunta do usuário: ${message}\n\nBase interna confiável do sistema: ${help}\n\nResponda de forma natural e útil. Comece pela resposta direta, complemente com contexto apenas se ajudar e não invente regras além da base interna/contexto seguro.`,scope,history});
+    if(external) return {...external,knowledgeGrounded:true};
+    return {reply:help,source:'local-knowledge'};
+  }
   if(isManagementQuestion(message)){
     const local=managementInsight(req,scope);
-    const external=await externalAnswer({req,message:`${message}\n\nAplique o AION Skill v${AionSkill.SKILL.version}. Faça análise empresarial avançada e, com web disponível, benchmarking do setor de distribuição de sucos/bebidas. Compare mercado x operação e entregue gap, oportunidade, impacto, complexidade, prioridade, recomendação e próximas ações.`,scope,forceWeb:true});
+    const external=await externalAnswer({req,message:`${message}\n\nFaça análise empresarial avançada e, com web disponível, benchmarking do setor de distribuição de sucos/bebidas. Compare mercado x operação e entregue gap, oportunidade, impacto, complexidade, prioridade, recomendação e próximas ações.`,scope,forceWeb:true,history});
     if(external) return {reply:`${local}\n\n7. Mercado, benchmark e aprofundamento AION\n${external.reply}`,source:external.source,webUsed:!!external.webUsed,skillVersion:AionSkill.SKILL.version};
     return {reply:local,source:'local-analytics',skillVersion:AionSkill.SKILL.version};
   }
   if(wantsExternalWeb(message)){
-    const external=await externalAnswer({req,message,scope,forceWeb:true});
+    const external=await externalAnswer({req,message,scope,forceWeb:true,history});
     if(external) return external;
     return {reply:'Eu consigo pesquisar informações externas de mercado quando a IA externa estiver configurada no servidor. Nesta instalação, continuo funcionando com os dados e regras internas. Para ativar a pesquisa de mercado, configure OPENAI_API_KEY, AION_EXTERNAL_AI_ENABLED=true e AION_WEB_SEARCH_ENABLED=true no servidor.',source:'local-fallback'};
   }
-  const external=await externalAnswer({req,message,scope});
+  const external=await externalAnswer({req,message,scope,history});
   if(external) return external;
-  return {reply:`Opero com o AION Skill v${AionSkill.SKILL.version}. Posso explicar qualquer função do sistema, analisar seus indicadores e sugerir prioridades. Exemplos: “como cadastro um cliente?”, “analise minha operação”, “o que devo priorizar hoje?”, “qual cliente mais comprou?”, “como gero uma NF?”, “como funciona o romaneio?”${status().externalAI?' ou pergunte sobre tendências do mercado.':'.'}`,source:'local-fallback'};
+  return {reply:`Pode perguntar do seu jeito. Eu consigo explicar funções do ${scope==='sales'?'Life Vendas':'Life Sucos'}, tirar dúvidas de processo, consultar os dados que seu usuário pode ver, fazer contas e conversões de embalagem, analisar indicadores e sugerir próximos passos. Se você me disser o que quer descobrir ou fazer, eu respondo diretamente.`,source:'local-fallback'};
 }
 
-module.exports={norm,status,howTo,dataAnswer,advancedAnalytics,managementInsight,isManagementQuestion,wantsExternalWeb,externalAnswer,unifiedFallback};
+module.exports={norm,status,howTo,dataAnswer,conversionAnswer,advancedAnalytics,managementInsight,isManagementQuestion,wantsExternalWeb,externalAnswer,unifiedFallback};

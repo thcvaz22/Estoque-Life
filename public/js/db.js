@@ -96,13 +96,23 @@ async function logHistory({ tipo, produtoId, produtoNome, quantidade, lote, nf, 
    aparelho), aqui o que importa é se este dispositivo consegue
    falar com o servidor local (mesmo computador ou mesma rede). */
 let _serverOnline = true;
+let _syncInfo = null;
+let _healthInfo = null;
 
 async function checkServerConnection() {
   try {
     const res = await fetch(API_BASE + '/health', { cache: 'no-store' });
     _serverOnline = res.ok;
+    try { _healthInfo = await res.clone().json(); } catch { _healthInfo = null; }
+    if (_serverOnline) {
+      try {
+        const sr = await fetch(API_BASE + '/sync/status', { cache: 'no-store' });
+        _syncInfo = sr.ok ? await sr.json() : null;
+      } catch { _syncInfo = null; }
+    }
   } catch (e) {
     _serverOnline = false;
+    _syncInfo = null;
   }
   updateSyncBadge();
   return _serverOnline;
@@ -111,8 +121,31 @@ async function checkServerConnection() {
 function updateSyncBadge() {
   const badge = document.getElementById('sync-badge');
   if (!badge) return;
-  badge.textContent = _serverOnline ? 'Conectado ao servidor' : 'Sem conexão com o servidor';
-  badge.dataset.state = _serverOnline ? 'online' : 'offline';
+  if (!_serverOnline) {
+    badge.textContent = 'Servidor local indisponível';
+    badge.dataset.state = 'offline';
+    return;
+  }
+  if (_healthInfo?.cloudMode) {
+    badge.textContent = '☁️ Nuvem online';
+    badge.dataset.state = 'online';
+    return;
+  }
+  const pending = Number(_syncInfo?.counts?.pending || 0) + Number(_syncInfo?.counts?.retry || 0);
+  const conflicts = Number(_syncInfo?.counts?.conflict || 0);
+  if (conflicts > 0) {
+    badge.textContent = `⚠ ${conflicts} conflito(s) de sincronização`;
+    badge.dataset.state = 'offline';
+  } else if (pending > 0) {
+    badge.textContent = `🔄 Local · ${pending} pendente(s)`;
+    badge.dataset.state = 'syncing';
+  } else if (_syncInfo?.paired) {
+    badge.textContent = '🏢 Local · sincronizado';
+    badge.dataset.state = 'online';
+  } else {
+    badge.textContent = '🏢 Servidor local';
+    badge.dataset.state = 'online';
+  }
 }
 function isServerOnline() {
   return _serverOnline;

@@ -29,6 +29,17 @@ function saveHistory(req,tipo,motivo,observacoes=''){
   Data.upsert('history',row.id,row); return row;
 }
 function docs(store){ return Data.all(store); }
+function clientOperationId(req){ return String(req.body?.clientOperationId || req.headers['x-life-seller-offline-id'] || '').trim(); }
+function clientOperationCached(id){
+  if(!id) return null;
+  const r=db.prepare('SELECT result FROM operations WHERE id=?').get(id);
+  if(!r) return null;
+  try{return JSON.parse(r.result);}catch{return null;}
+}
+function saveClientOperation(id,result){
+  if(!id)return;
+  db.prepare('INSERT OR IGNORE INTO operations(id,result,createdAt) VALUES(?,?,?)').run(id,JSON.stringify(result),nowUTCISOString());
+}
 function productAvailableRaw(productId){
   const today=todayLocalISO();
   const row=db.prepare(`SELECT COALESCE(SUM(quantidadeDisponivel),0) AS q FROM lots WHERE productId=? AND (validade IS NULL OR validade >= ?)`).get(productId,today);
@@ -133,16 +144,17 @@ router.get('/customers',(req,res)=>{
   if(isSeller(req)) all=all.filter(c=>c.vendedorId===req.authUser.id);
   res.json(all.sort((a,b)=>String(a.nome||a.razaoSocial||'').localeCompare(String(b.nome||b.razaoSocial||''),'pt-BR')));
 });
-router.get('/customers/pending',requireStaff,(req,res)=>res.json(docs('customers').filter(c=>c.ativo!==false&&c.statusAprovacao==='pendente')));
+router.get('/customers/pending',requireStaff,(req,res)=>res.json(docs('customers').filter(c=>c.ativo!==false&&['pendente','pre_cadastro'].includes(c.statusAprovacao))));
 router.post('/customers',(req,res)=>{
   if(!isSeller(req) && !isStaff(req)) return res.status(403).json({error:'Perfil sem permissão para cadastrar cliente.'});
+  const _clientOp=clientOperationId(req); const _cached=clientOperationCached(_clientOp); if(_cached) return res.json(_cached);
   const b=req.body||{}; const nome=String(b.nome||b.nomeFantasia||b.razaoSocial||'').trim(); if(!nome) return res.status(400).json({error:'Informe o nome do cliente.'});
   const cnpj=String(b.cnpj||'').replace(/\D/g,'');
   if(cnpj){ const existing=docs('customers').find(c=>String(c.cnpj||'').replace(/\D/g,'')===cnpj); if(existing) return res.status(409).json({error: existing.vendedorId && existing.vendedorId!==req.authUser.id ? 'Este cliente já pertence à carteira de outro vendedor. Solicite transferência ao gerente.' : 'Este CNPJ já está cadastrado.', customerId:existing.id}); }
   const id=uid('cli'); const seller=isSeller(req)?req.authUser:null;
   const row={id,nome,razaoSocial:b.razaoSocial||'',nomeFantasia:b.nomeFantasia||nome,cnpj:b.cnpj||'',inscricaoEstadual:b.inscricaoEstadual||'',telefone:b.telefone||'',whatsapp:b.whatsapp||'',email:b.email||'',endereco:b.endereco||'',bairro:b.bairro||'',cidade:b.cidade||'',uf:b.uf||'',regiao:b.regiao||'',fornecedor:b.fornecedor||'',observacoes:b.observacoes||'',vendedorId:seller?.id||b.vendedorId||null,vendedorNome:seller?.nome||b.vendedorNome||'',statusAprovacao:isSeller(req)?'pendente':'aprovado',classificacao:isSeller(req)?null:(b.classificacao||'Verde'),tabelaPrecoId:b.tabelaPrecoId||null,ativo:true,criadoEm:nowUTCISOString(),criadoPor:auditLabel(req)};
   Data.upsert('customers',id,row); saveHistory(req,'cadastro_cliente',`Novo cliente ${nome}`,isSeller(req)?'Aguardando aprovação da operação.':'Cadastro criado pela equipe operacional.');
-  res.status(201).json(row);
+  saveClientOperation(_clientOp,row); res.status(201).json(row);
 });
 
 router.put('/customers/:id',requireStaff,(req,res)=>{
@@ -181,7 +193,7 @@ router.delete('/customers/:id',requireStaff,(req,res)=>{
 router.post('/customers/:id/approve',requireStaff,(req,res)=>{
   const c=getCustomer(req.params.id); if(!c) return res.status(404).json({error:'Cliente não encontrado.'});
   const cls=String(req.body?.classificacao||''); if(!['Verde','Amarelo'].includes(cls)) return res.status(400).json({error:'Selecione a classificação Verde ou Amarelo.'});
-  c.statusAprovacao='aprovado'; c.classificacao=cls; c.tabelaPrecoId=req.body?.tabelaPrecoId||c.tabelaPrecoId||null; c.aprovadoPor=auditLabel(req); c.aprovadoEm=nowUTCISOString(); c.motivoReprovacao='';
+  c.statusAprovacao='aprovado'; c.classificacao=cls; c.tabelaPrecoId=req.body?.tabelaPrecoId||c.tabelaPrecoId||null; c.cadastroIncompleto=false; c.dadosPendentes=[]; c.aprovadoPor=auditLabel(req); c.aprovadoEm=nowUTCISOString(); c.motivoReprovacao='';
   Data.upsert('customers',c.id,c); saveHistory(req,'cliente_aprovado',`Cliente ${c.nome} aprovado como ${cls}`,`Vendedor: ${c.vendedorNome||'-'}`); res.json(c);
 });
 router.post('/customers/:id/reject',requireStaff,(req,res)=>{
@@ -231,12 +243,13 @@ router.post('/costs/:productId',requireManager,(req,res)=>{
 router.get('/orders',(req,res)=>res.json(visibleOrders(req).sort((a,b)=>String(b.criadoEm||'').localeCompare(String(a.criadoEm||'')))));
 router.post('/orders',(req,res)=>{
   if(!isSeller(req)&&!isStaff(req)) return res.status(403).json({error:'Perfil sem permissão para criar pedidos.'});
+  const _clientOp=clientOperationId(req); const _cached=clientOperationCached(_clientOp); if(_cached) return res.json(_cached);
   try{
     const b=req.body||{}; const c=getCustomer(b.clienteId); if(!activeCustomer(c)) err(400,'Cliente ainda não está aprovado para pedidos.'); if(isSeller(req)&&c.vendedorId!==req.authUser.id) err(403,'Este cliente não pertence à sua carteira.');
     const tableId=b.tabelaPrecoId||c.tabelaPrecoId; const table=tableForCustomer(tableId,c.id); if(!table) err(400,'Selecione uma tabela de preço válida.');
     const norm=normalizeOrderItems(b.itens,table,c.id,{allowPriceOverride:isStaff(req)}); const pay=paymentInfo(c,b.formaPagamento,norm.total); const id=uid('order');
     const run=db.transaction(()=>{ replaceReservations(id,norm.needs); const row={id,numero:orderNumber(),clienteId:c.id,clienteNome:c.nome||c.nomeFantasia||c.razaoSocial,vendedorId:isSeller(req)?req.authUser.id:(b.vendedorId||c.vendedorId||req.authUser.id),vendedorNome:isSeller(req)?req.authUser.nome:(b.vendedorNome||c.vendedorNome||req.authUser.nome),tabelaPrecoId:table.id,tabelaPrecoNome:table.nome,itens:norm.items,total:norm.total,...pay,observacoes:String(b.observacoes||''),fornecedorNome:String(b.fornecedorNome||c.fornecedor||''),status:'enviado',statusAprovacao:'pendente',nfStatus:b.nfNumero?'informada':'pendente',nfNumero:String(b.nfNumero||''),criadoEm:nowUTCISOString(),criadoPor:auditLabel(req),historicoStatus:[{status:'enviado',data:nowUTCISOString(),por:auditLabel(req)}]}; Data.upsert('orders',id,row); return row; });
-    const row=run(); saveHistory(req,'pedido_enviado',`Pedido ${row.numero} enviado`,`Cliente: ${row.clienteNome} · Total R$ ${row.total.toFixed(2)}`); res.status(201).json(row);
+    const row=run(); saveHistory(req,'pedido_enviado',`Pedido ${row.numero} enviado`,`Cliente: ${row.clienteNome} · Total R$ ${row.total.toFixed(2)}`); saveClientOperation(_clientOp,row); res.status(201).json(row);
   }catch(e){res.status(e.status||500).json({error:e.message});}
 });
 router.post('/orders/:id/resubmit',(req,res)=>{
@@ -295,7 +308,7 @@ router.get('/separation/available',requireStaff,(req,res)=>{
   res.json(rows);
 });
 router.post('/separation/manifests',requireStaff,(req,res)=>{
-  try{const ids=Array.isArray(req.body?.orderIds)?req.body.orderIds:[];if(!ids.length)err(400,'Selecione ao menos um pedido aprovado.');const orders=ids.map(getOrder);if(orders.some(o=>!o||o.status!=='aprovado'||o.manifestId))err(409,'Há pedido inválido, não aprovado ou já incluído em romaneio.');const grouped={};for(const o of orders)for(const it of o.itens){if(!grouped[it.produtoId])grouped[it.produtoId]={produtoId:it.produtoId,produtoNome:it.produtoNome,codigoInterno:it.codigoInterno,quantidadeUnidades:0};grouped[it.produtoId].quantidadeUnidades+=it.quantidadeUnidades;}const totals=Object.values(grouped).map(g=>{const p=getProduct(g.produtoId);return {...g,conversao:breakdown(p,g.quantidadeUnidades)};});const id=uid('manifest');const row={id,numero:`ROM${Date.now().toString().slice(-7)}`,data:todayLocalISO(),orderIds:ids,pedidos:orders.map(o=>({pedidoId:o.id,numero:o.numero,cliente:o.clienteNome,nfNumero:o.nfNumero||o.numero,itens:o.itens})),totais,status:'aberto',criadoEm:nowUTCISOString(),criadoPor:auditLabel(req)};const run=db.transaction(()=>{Data.upsert('shippingManifests',id,row);for(const o of orders){o.manifestId=id;o.status='separacao';o.historicoStatus=(o.historicoStatus||[]).concat({status:'separacao',data:nowUTCISOString(),por:auditLabel(req)});Data.upsert('orders',o.id,o);}return row;});const saved=run();saveHistory(req,'romaneio_gerado',`Romaneio ${saved.numero} gerado`,`${orders.length} pedido(s) · ${totals.reduce((a,x)=>a+x.quantidadeUnidades,0)} unidades`);res.status(201).json(saved);}catch(e){res.status(e.status||500).json({error:e.message});}
+  try{const ids=Array.isArray(req.body?.orderIds)?req.body.orderIds:[];if(!ids.length)err(400,'Selecione ao menos um pedido aprovado.');const orders=ids.map(getOrder);if(orders.some(o=>!o||o.status!=='aprovado'||o.manifestId))err(409,'Há pedido inválido, não aprovado ou já incluído em romaneio.');const grouped={};for(const o of orders)for(const it of o.itens){if(!grouped[it.produtoId])grouped[it.produtoId]={produtoId:it.produtoId,produtoNome:it.produtoNome,codigoInterno:it.codigoInterno,quantidadeUnidades:0};grouped[it.produtoId].quantidadeUnidades+=it.quantidadeUnidades;}const totals=Object.values(grouped).map(g=>{const p=getProduct(g.produtoId);return {...g,conversao:breakdown(p,g.quantidadeUnidades)};});const id=uid('manifest');const row={id,numero:`ROM${Date.now().toString().slice(-7)}`,data:todayLocalISO(),orderIds:ids,pedidos:orders.map(o=>({pedidoId:o.id,numero:o.numero,cliente:o.clienteNome,nfNumero:o.nfNumero||o.numero,itens:o.itens})),totais:totals,status:'aberto',criadoEm:nowUTCISOString(),criadoPor:auditLabel(req)};const run=db.transaction(()=>{Data.upsert('shippingManifests',id,row);for(const o of orders){o.manifestId=id;o.status='separacao';o.historicoStatus=(o.historicoStatus||[]).concat({status:'separacao',data:nowUTCISOString(),por:auditLabel(req)});Data.upsert('orders',o.id,o);}return row;});const saved=run();saveHistory(req,'romaneio_gerado',`Romaneio ${saved.numero} gerado`,`${orders.length} pedido(s) · ${totals.reduce((a,x)=>a+x.quantidadeUnidades,0)} unidades`);res.status(201).json(saved);}catch(e){res.status(e.status||500).json({error:e.message});}
 });
 router.get('/separation/manifests',requireStaff,(req,res)=>res.json(docs('shippingManifests').sort((a,b)=>String(b.criadoEm||'').localeCompare(String(a.criadoEm||'')))));
 router.post('/separation/manifests/:id/close',requireStaff,(req,res)=>{const m=Data.get('shippingManifests',req.params.id);if(!m)return res.status(404).json({error:'Romaneio não encontrado.'});m.status='fechado';m.fechadoEm=nowUTCISOString();m.fechadoPor=auditLabel(req);Data.upsert('shippingManifests',m.id,m);saveHistory(req,'romaneio_fechado',`Romaneio ${m.numero} fechado`);res.json(m);});
@@ -385,12 +398,13 @@ router.get('/assistant-status',(req,res)=>res.json(AionUnified.status()));
 router.post('/assistant',async (req,res)=>{
   const raw=String(req.body?.message||'').trim();
   const q=assistantNorm(raw);
+  const history=Array.isArray(req.body?.history)?req.body.history.slice(-10):[];
   if(!q) return res.status(400).json({error:'Escreva uma pergunta para a AION IA.'});
   const orders=visibleOrders(req);
   const customers=assistantVisibleCustomers(req);
   const range=assistantRange(q);
 
-  const sharedData=AionUnified.dataAnswer(req,raw,'sales');
+  const sharedData=AionUnified.dataAnswer(req,raw,'sales',history);
   if(sharedData) return res.json({...sharedData,text:sharedData.reply});
 
   const help=AionUnified.howTo(raw,'sales') || assistantHelpText(q);
@@ -466,7 +480,7 @@ router.post('/assistant',async (req,res)=>{
   }
 
   try {
-    const answer=await AionUnified.unifiedFallback({req,message:raw,scope:'sales'});
+    const answer=await AionUnified.unifiedFallback({req,message:raw,scope:'sales',history});
     if(answer) return res.json({...answer,text:answer.reply});
   } catch(err){
     console.warn('[AION Vendas] fallback unificado:',err.message);

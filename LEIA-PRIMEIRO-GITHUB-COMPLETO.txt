@@ -1,0 +1,22 @@
+LIFE SUCOS v18.2 — PACOTE COMPLETO PARA ATUALIZAR O GITHUB
+
+Uso: atualização direta da base GitHub v17.2 para v18.2.
+Este pacote NÃO é incremental sobre v18.1: ele contém a árvore completa do projeto v18.2 necessária para repor também os componentes introduzidos na v18.1.
+
+Inclui, entre outros:
+- vendedores e carteiras v18.1;
+- pré-cadastro de clientes v18.1;
+- troca de senha do vendedor (/api/auth/change-password);
+- seller-public/offline-sync.js;
+- server/preseedV18_1.js;
+- AION Official Skill v1.2 conversacional;
+- integração AION do Life principal e Life Vendas.
+
+Procedimento recomendado:
+1. Extraia em pasta temporária.
+2. Copie recursivamente por cima do clone Git limpo.
+3. Não apague a pasta .git do clone.
+4. Revise git status e git diff.
+5. Execute node --check e testes antes de commit/push.
+
+Não contém node_modules, banco local, .env real ou arquivos de log.

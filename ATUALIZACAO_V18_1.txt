@@ -1,0 +1,27 @@
+LIFE SUCOS v18.1 — VENDEDORES + CARTEIRAS
+
+ALTERAÇÕES PRINCIPAIS
+- 5 vendedores pré-cadastrados.
+- Login do Life Vendas aceita nome completo ou usuário.
+- Senha inicial solicitada: life2026.
+- A senha inicial fica armazenada no seed somente como scrypt hash + salt; o sistema nunca grava a senha em texto puro no banco.
+- Nova tela Minha conta > Trocar senha no Life Vendas.
+- 284 clientes pré-cadastrados, vinculados às respectivas carteiras e com data do último pedido.
+- Clientes importados entram como PRÉ-CADASTRO e não podem gerar pedido até terem os dados complementados e serem aprovados/classificados.
+- Troca de senha é sincronizada pelo AION Sync entre servidor local e nuvem.
+- Merge de usuários usa updatedAt para impedir que uma versão antiga de senha sobrescreva uma mais nova.
+
+VENDEDORES
+FABIANA — usuário alternativo: fabiana — 104 clientes
+FABIANO PELANDA — usuário alternativo: fabiano.pelanda — 33 clientes
+MANOEL JR — usuário alternativo: manoel.jr — 48 clientes
+MARCOS SCHULTZ — usuário alternativo: marcos.schultz — 72 clientes
+ANTONIO ALVES DA SILVA — usuário alternativo: antonio.alves.da.silva — 27 clientes
+
+No login, o vendedor pode digitar o NOME COMPLETO ou o usuário alternativo.
+
+VALIDAÇÃO REALIZADA NESTE AMBIENTE
+- 90 arquivos JavaScript: sintaxe validada com node --check.
+- Integridade do pré-cadastro: 5 vendedores / 284 clientes / nenhum nome duplicado nos relatórios.
+- Hash da senha inicial validado para as cinco contas.
+- A suíte integrada não pôde rodar por ausência das dependências Node (express, better-sqlite3, pg) neste ambiente; deve ser executada no Codex/PC após npm install.
