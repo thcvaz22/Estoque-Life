@@ -7,6 +7,7 @@
 const express = require('express');
 const AionUnified = require('./services/aionUnified');
 const AionSkill = require('./services/aionSkill');
+const AionLocalContext = require('./services/aionLocalContext');
 
 const router = express.Router();
 
@@ -69,25 +70,32 @@ async function runAgent(req,res,next,{scope='operational',salesResponse=false}={
       req,message:prompt,scope,forceWeb:market||management,history
     });
     if(external){
-      const payload={...external,agentic:true,skillVersion:AionSkill.SKILL.version};
+      const payload={...external,agentic:true,skillVersion:AionSkill.SKILL.version,providerResponded:true};
       if(salesResponse)payload.text=payload.reply;
       return res.json(payload);
     }
 
-    // Sem provedor generativo: usa conhecimento determinístico apenas como contingência.
+    // Sem resposta do provedor generativo: nunca devolve a apresentação genérica.
+    // Primeiro usa evidências internas; gestão/mercado mantêm o analisador local;
+    // demais perguntas recebem uma contingência contextual ancorada na tela/conversa.
     let fallback=null;
-    if(ev.data)fallback={...ev.data,agenticFallback:true,skillVersion:AionSkill.SKILL.version};
-    else if(ev.help)fallback={reply:ev.help,source:'local-knowledge',agenticFallback:true,skillVersion:AionSkill.SKILL.version};
-    else fallback=await AionUnified.unifiedFallback({req,message,scope,history});
+    if(ev.data) fallback={...ev.data,agenticFallback:true,skillVersion:AionSkill.SKILL.version};
+    else if(ev.help) fallback={reply:ev.help,source:'local-knowledge',agenticFallback:true,skillVersion:AionSkill.SKILL.version};
+    else if(management||market) fallback=await AionUnified.unifiedFallback({req,message,scope,history});
+    else fallback=AionLocalContext.answer({message,scope,screen,history,req});
+
     if(fallback){
-      const payload={...fallback,agenticFallback:true,skillVersion:AionSkill.SKILL.version};
+      const payload={...fallback,agenticFallback:true,skillVersion:AionSkill.SKILL.version,providerConfigured:AionUnified.status().externalAI,providerResponded:false};
       if(salesResponse)payload.text=payload.reply;
       return res.json(payload);
     }
     return next();
   }catch(err){
-    console.warn(`[AION Agent ${scope}] fallback para handler legado:`,err.message);
-    return next();
+    console.warn(`[AION Agent ${scope}] fallback contextual:`,err.message);
+    const fallback=AionLocalContext.answer({message,scope,screen,history,req});
+    const payload={...fallback,agenticFallback:true,skillVersion:AionSkill.SKILL.version,providerResponded:false};
+    if(salesResponse)payload.text=payload.reply;
+    return res.json(payload);
   }
 }
 
