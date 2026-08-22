@@ -8,6 +8,7 @@ const express = require('express');
 const AionUnified = require('./services/aionUnified');
 const AionSkill = require('./services/aionSkill');
 const AionLocalContext = require('./services/aionLocalContext');
+const ProviderState = require('./services/aionProviderState');
 
 const router = express.Router();
 
@@ -66,14 +67,18 @@ async function runAgent(req,res,next,{scope='operational',salesResponse=false}={
       'Nunca afirme que executou uma ação se o sistema não retornou confirmação real. Ações sensíveis continuam exigindo confirmação no fluxo autorizado.'
     ].filter(Boolean).join('\n\n');
 
+    const configured=AionUnified.status().externalAI;
+    ProviderState.markConfigured(configured);
     const external=await AionUnified.externalAnswer({
       req,message:prompt,scope,forceWeb:market||management,history
     });
     if(external){
+      ProviderState.success();
       const payload={...external,agentic:true,skillVersion:AionSkill.SKILL.version,providerResponded:true};
       if(salesResponse)payload.text=payload.reply;
       return res.json(payload);
     }
+    if(configured) ProviderState.failure('Provedor configurado, mas não retornou resposta válida nesta solicitação.');
 
     // Sem resposta do provedor generativo: nunca devolve a apresentação genérica.
     // Primeiro usa evidências internas; gestão/mercado mantêm o analisador local;
@@ -85,13 +90,14 @@ async function runAgent(req,res,next,{scope='operational',salesResponse=false}={
     else fallback=AionLocalContext.answer({message,scope,screen,history,req});
 
     if(fallback){
-      const payload={...fallback,agenticFallback:true,skillVersion:AionSkill.SKILL.version,providerConfigured:AionUnified.status().externalAI,providerResponded:false};
+      const payload={...fallback,agenticFallback:true,skillVersion:AionSkill.SKILL.version,providerConfigured:configured,providerResponded:false};
       if(salesResponse)payload.text=payload.reply;
       return res.json(payload);
     }
     return next();
   }catch(err){
     console.warn(`[AION Agent ${scope}] fallback contextual:`,err.message);
+    ProviderState.failure(err.message);
     const fallback=AionLocalContext.answer({message,scope,screen,history,req});
     const payload={...fallback,agenticFallback:true,skillVersion:AionSkill.SKILL.version,providerResponded:false};
     if(salesResponse)payload.text=payload.reply;
@@ -99,6 +105,10 @@ async function runAgent(req,res,next,{scope='operational',salesResponse=false}={
   }
 }
 
+router.get('/status',(req,res)=>{
+  const base=AionUnified.status();
+  res.json({...base,providerHealth:ProviderState.snapshot(),skillVersion:AionSkill.SKILL.version});
+});
 router.post('/ask',(req,res,next)=>runAgent(req,res,next,{scope:'operational'}));
 router.post('/assistant',(req,res,next)=>runAgent(req,res,next,{scope:'sales',salesResponse:true}));
 
