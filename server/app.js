@@ -13,6 +13,8 @@ const { seedIfNewDatabase, Data } = require('./db');
 const apiRouter = require('./routes');
 const stockRouter = require('./stockRoutes');
 const aionRouter = require('./aionRoutes');
+const aionAgentRouter = require('./aionAgentRoutes');
+const logisticsRouter = require('./logisticsRoutes');
 const commercialRouter = require('./commercialRoutes');
 const fiscalRouter = require('./fiscalRoutes');
 const { createOcrRouter } = require('./ocrRoutes');
@@ -124,9 +126,15 @@ function createApp({ seed = true, ocrEngine } = {}) {
   // inicializador usa essa rota para saber quando o servidor terminou de subir.
   app.use('/api/auth', createAuthRouter());
   app.use('/api/users', requireAuth, requireManager, createUserRouter());
+  // Skill 2.0 entra antes dos handlers legados: conversa contextual primeiro,
+  // rotas estruturadas/contingência depois. Logística intercepta apenas os
+  // endpoints de veículos, aprovação e romaneio que pertencem ao novo fluxo.
+  app.use('/api/commercial', requireAuth, aionAgentRouter);
+  app.use('/api/commercial', requireAuth, logisticsRouter);
   app.use('/api/commercial', requireAuth, commercialRouter);
   app.use('/api/fiscal', requireAuth, requireOperational, express.json({ limit: '30mb' }), fiscalRouter);
   app.use('/api/stock', requireAuth, requireOperational, stockRouter);
+  app.use('/api/aion', requireAuth, requireOperational, aionAgentRouter);
   app.use('/api/aion', requireAuth, requireOperational, aionRouter);
   // fotos de NF em base64 podem passar bem dos 8mb padrão (várias páginas
   // em alta resolução) — por isso este grupo de rotas tem um limite maior.
