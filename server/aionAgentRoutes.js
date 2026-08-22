@@ -15,6 +15,11 @@ const Specialists = require('./services/aionSpecialists');
 const router = express.Router();
 function norm(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();}
 function explicitOperationalAction(message){const q=norm(message);return /\b(cadastrar|cadastre|adicionar|criar|registre|registrar|nova entrada|novo pedido|nova saida|nova saída|avaria|perda|relatorio|relatório|pdf)\b/.test(q);}
+function actionConversation(message,history=[]){
+  const recentUsers=history.filter(x=>x?.role!=='assistant').slice(-4).map(x=>String(x?.content||x?.text||'').trim()).filter(Boolean);
+  const combined=[...recentUsers,String(message||'').trim()].filter(Boolean).join(' ; ');
+  return {combined,hasAction:explicitOperationalAction(combined),currentHasAction:explicitOperationalAction(message)};
+}
 function sanitizedScreenContext(req){const raw=req.body?.screenContext;if(!raw||typeof raw!=='object')return null;return {route:String(raw.route||raw.routeId||'').slice(0,80),title:String(raw.title||raw.viewTitle||'').slice(0,120),path:String(raw.path||'').slice(0,160)};}
 function evidenceFor(req,message,scope,history){
   const parts=[];const data=AionUnified.dataAnswer(req,message,scope,history);if(data?.reply)parts.push(`DADO INTERNO VERIFICADO:\n${data.reply}`);
@@ -29,8 +34,18 @@ async function providerAnswer(args){if(Gemini.status().externalAI)return Gemini.
 
 async function runAgent(req,res,next,{scope='operational',salesResponse=false}={}){
   const message=String(req.body?.message||'').trim();if(!message)return res.status(400).json({error:'Escreva uma pergunta ou solicitação.'});
-  if(scope==='operational'&&explicitOperationalAction(message))return next();
-  const history=Array.isArray(req.body?.history)?req.body.history.slice(-12):[];const screen=sanitizedScreenContext(req);
+  const history=Array.isArray(req.body?.history)?req.body.history.slice(-12):[];
+  if(scope==='operational'){
+    const actionCtx=actionConversation(message,history);
+    if(actionCtx.hasAction){
+      // Continuidade de ação: respostas curtas como “Carlos”, “NF 123” ou
+      // “24 unidades” são recombinadas com o pedido original antes de chegar
+      // ao executor estruturado. Assim o objetivo não se perde entre turnos.
+      if(!actionCtx.currentHasAction) req.body.message=actionCtx.combined;
+      return next();
+    }
+  }
+  const screen=sanitizedScreenContext(req);
   try{
     const ev=evidenceFor(req,message,scope,history),market=AionUnified.wantsExternalWeb(message),management=AionUnified.isManagementQuestion(message),coreMetrics=Core.metrics(req),specialists=Specialists.route(message);
     const prompt=[
