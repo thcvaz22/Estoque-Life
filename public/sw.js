@@ -1,7 +1,7 @@
 /* ============================================================
    SW.JS — Service Worker
    ============================================================ */
-const CACHE_NAME = 'life-sucos-v18-2-aion-agent-core-3-0';
+const CACHE_NAME = 'life-sucos-v18-2-aion-agent-core-3-0-1';
 const APP_SHELL = [
   './','./index.html','./manifest.json','./css/styles.css','./js/auth.js','./js/db.js','./js/utils.js','./js/barcode.js','./js/charts.js','./js/nfe.js','./js/receivingManifest.js','./js/export.js','./js/aion-ai.js','./js/app.js','./js/aion-context-v20.js','./js/aion-agent-core-v30.js','./js/operational-logistics-v19.js','./js/views/dashboard.js','./js/views/products.js','./js/views/entries.js','./js/views/suppliers.js','./js/views/exits.js','./js/views/backlog.js','./js/views/stock.js','./js/views/inventory.js','./js/views/losses.js','./js/views/returns.js','./js/views/reports.js','./js/views/history.js','./js/views/users.js','./js/views/settings.js','./js/views/commercial.js','./js/views/invoices.js','./js/views/commercial-v10.js','./icons/logo-header.png','./icons/icon-192.png'
 ];
