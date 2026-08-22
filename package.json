@@ -1,7 +1,7 @@
 {
   "name": "life-sucos-sistema",
   "version": "18.2.0",
-  "description": "Ecossistema Life Sucos — v18.2 AION Skill 1.2 conversacional: memória curta, especialista do sistema, calculadora logística, vendedores/carteiras, AION Sync, recebimento e devoluções.",
+  "description": "Ecossistema Life Sucos — v18.2 com AION Skill 2.0 contextual/agentiva, memória conversacional, análise empresarial, veículos e fluxo Romaneio→Saída.",
   "private": true,
   "main": "server/index.js",
   "scripts": {

@@ -7,7 +7,7 @@
    o cache antigo automaticamente.
    ============================================================ */
 
-const CACHE_NAME = 'life-sucos-v18-2-aion-skill-1-2';
+const CACHE_NAME = 'life-sucos-v18-2-aion-skill-2-0-logistics';
 
 const APP_SHELL = [
   './',
@@ -24,6 +24,8 @@ const APP_SHELL = [
   './js/export.js',
   './js/aion-ai.js',
   './js/app.js',
+  './js/aion-context-v20.js',
+  './js/operational-logistics-v19.js',
   './js/views/dashboard.js',
   './js/views/products.js',
   './js/views/entries.js',
