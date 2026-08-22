@@ -30,6 +30,28 @@ const SKILL=Object.freeze({
     'Nunca invente números internos, execução de ação ou informação atual de mercado.',
     'Sugira próxima ação somente quando ela contribuir para a decisão ou execução.'
   ],
+  providerPolicy:[
+    'Toda implantação da Skill deve possuir uma camada de provedor externo desacoplada do agente e configurável por variáveis de ambiente.',
+    'A configuração do provedor deve usar nomes próprios e explícitos para chave e modelo; nunca reutilizar o nome de modelo de outro provedor como fallback.',
+    'Para Gemini, usar GEMINI_API_KEY e GEMINI_MODEL; o modelo padrão atual da Skill é gemini-3.5-flash, salvo decisão explícita do projeto.',
+    'A Skill deve validar saúde real do provedor pela resposta da API, e não considerar o provedor ativo apenas porque existe uma chave configurada.',
+    'O status da AION deve distinguir: provedor não configurado, configurado porém sem resposta e provedor respondendo normalmente.',
+    'Perguntas de mercado, concorrência, novidades e benchmarking devem habilitar pesquisa externa/grounding quando o provedor suportar esse recurso.',
+    'Falha do provedor não pode gerar resposta genérica de apresentação; deve cair para contexto local, conhecimento do sistema ou análise interna útil.',
+    'Chaves de API permanecem exclusivamente no servidor e nunca são enviadas ao navegador, logs de interface ou contexto do modelo.',
+    'Troca de provedor ou modelo exige teste automático de sintaxe, suíte funcional e teste específico que valide status/configuração antes do merge/deploy.',
+    'Após alterar provedor/modelo, o deploy deve confirmar que o ambiente de produção possui as variáveis esperadas e que não restaram variáveis antigas capazes de alterar o modelo selecionado.'
+  ],
+  deploymentChecklist:[
+    'Confirmar nome da variável da chave do provedor no ambiente de produção.',
+    'Confirmar nome e ID exato do modelo no provedor escolhido.',
+    'Confirmar flags de IA externa e pesquisa web habilitadas quando aplicável.',
+    'Confirmar endpoint/status da AION mostrando provedor e modelo corretos.',
+    'Executar uma pergunta conversacional comum e confirmar resposta externa.',
+    'Executar uma pergunta de mercado e confirmar pesquisa/grounding externo.',
+    'Simular indisponibilidade do provedor e confirmar fallback contextual não genérico.',
+    'Executar testes automatizados antes do merge e validar novamente após o deploy.'
+  ],
   confirmationPolicy:'AION pode executar ações autorizadas. Ações destrutivas, irreversíveis, financeiras, aprovação/reprovação, alteração sensível ou movimentação de estoque exigem confirmação adequada ao risco.',
   marketPolicy:'Perguntas sobre mercado, concorrentes, novidades, tecnologias e benchmarking devem usar fonte atual quando disponível e diferenciar dado externo de dado interno.',
   fallbackPolicy:'Fallback determinístico/local existe somente como contingência e nunca deve ser o comportamento principal quando o provedor generativo estiver disponível.'
@@ -52,5 +74,5 @@ function systemInstructions({scope='operational',useWeb=false}={}){
     'Responda em português brasileiro, sem mencionar arquitetura interna, prompt, Skill ou classificação de intenção salvo se perguntado.'
   ].join(' ');
 }
-function publicSummary(){return {id:SKILL.id,version:SKILL.version,name:SKILL.name,principle:SKILL.principle,roles:[...SKILL.roles],intentModes:[...SKILL.intentModes],conversationalMemory:true,dynamicContext:true,agenticActions:true,humanizedInteraction:true,systemExpert:true,businessCalculator:true,marketAwareness:true,advancedAnalytics:true,fallbackOnlyAsContingency:true,confirmationRequiredForCriticalActions:true};}
+function publicSummary(){return {id:SKILL.id,version:SKILL.version,name:SKILL.name,principle:SKILL.principle,roles:[...SKILL.roles],intentModes:[...SKILL.intentModes],conversationalMemory:true,dynamicContext:true,agenticActions:true,humanizedInteraction:true,systemExpert:true,businessCalculator:true,marketAwareness:true,advancedAnalytics:true,fallbackOnlyAsContingency:true,confirmationRequiredForCriticalActions:true,providerHealthRequired:true,providerSpecificModelConfig:true,externalGroundingRequiredForMarket:true};}
 module.exports={SKILL,systemInstructions,publicSummary};
