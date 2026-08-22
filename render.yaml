@@ -32,9 +32,9 @@ services:
         value: "true"
       - key: AION_WEB_SEARCH_ENABLED
         value: "true"
-      - key: AION_MODEL
-        value: gpt-5-mini
-      - key: OPENAI_API_KEY
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_API_KEY
         sync: false
       - key: BOOTSTRAP_ADMIN_USERNAME
         value: admin
