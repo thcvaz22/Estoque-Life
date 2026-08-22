@@ -5,6 +5,7 @@
   function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
   async function api(path,opts={}){const r=await fetch(path,{headers:{'Content-Type':'application/json',...(opts.headers||{})},...opts});const data=await r.json().catch(()=>({}));if(!r.ok)throw new Error(data.error||`Erro ${r.status}`);return data;}
   function style(){if(document.getElementById('aion-core-3-style'))return;const s=document.createElement('style');s.id='aion-core-3-style';s.textContent=`
+    .dashboard-aion-card{display:none!important}
     .aion-core3{margin:0 0 18px;border:1px solid rgba(47,125,50,.18);border-radius:18px;padding:18px;background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(240,248,235,.94));box-shadow:0 12px 35px rgba(41,73,35,.08)}
     .aion-core3__head{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;margin-bottom:14px}.aion-core3__head h3{margin:0;font-size:18px}.aion-core3__head p{margin:4px 0 0;color:#66745e;font-size:13px}.aion-core3__badge{white-space:nowrap;font-size:11px;font-weight:700;padding:6px 9px;border-radius:999px;background:#e8f5e4;color:#2f7d32}
     .aion-core3__metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:14px}.aion-core3__metric{padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.75);border:1px solid rgba(0,0,0,.05)}.aion-core3__metric span{display:block;font-size:10px;color:#73806e;text-transform:uppercase}.aion-core3__metric strong{display:block;margin-top:3px;font-size:15px}
