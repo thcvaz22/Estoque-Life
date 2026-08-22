@@ -23,6 +23,22 @@ test('AION Skill oficial 2.0 é contextual, agentiva e conversacional',()=>{
   assert.ok(summary.fallbackOnlyAsContingency);
 });
 
+test('AION Skill protege configuração e saúde do provedor externo',()=>{
+  assert.ok(Array.isArray(skill.SKILL.providerPolicy));
+  assert.ok(skill.SKILL.providerPolicy.length>=8);
+  assert.ok(Array.isArray(skill.SKILL.deploymentChecklist));
+  const policy=skill.SKILL.providerPolicy.join(' ');
+  assert.match(policy,/GEMINI_API_KEY/);
+  assert.match(policy,/GEMINI_MODEL/);
+  assert.match(policy,/gemini-3\.5-flash/);
+  assert.match(policy,/saúde real do provedor/i);
+  assert.match(policy,/não pode gerar resposta genérica/i);
+  const summary=skill.publicSummary();
+  assert.ok(summary.providerHealthRequired);
+  assert.ok(summary.providerSpecificModelConfig);
+  assert.ok(summary.externalGroundingRequiredForMarket);
+});
+
 test('camada unificada mantém análises temporais, projeções e mercado',()=>{
   for(const token of ['momPct','yoyPct','ytdPct','movingAverages','correlation','projections','forceWeb:true','AionSkill.systemInstructions']) assert.match(unified,new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
 });
