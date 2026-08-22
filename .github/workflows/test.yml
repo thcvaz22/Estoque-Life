@@ -25,8 +25,12 @@ jobs:
           node --check server/logisticsRoutes.js
           node --check server/aionAgentRoutes.js
           node --check server/services/aionSkill.js
+          node --check server/services/aionAgentCore.js
+          node --check server/services/aionGoals.js
+          node --check server/services/aionSpecialists.js
           node --check public/js/operational-logistics-v19.js
           node --check public/js/aion-context-v20.js
+          node --check public/js/aion-agent-core-v30.js
           node --check server/app.js
       - name: Rodar suíte funcional
         env:
