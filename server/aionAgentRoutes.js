@@ -15,7 +15,7 @@ function norm(v){
 }
 function explicitOperationalAction(message){
   const q=norm(message);
-  return /\b(cadastrar|cadastre|adicionar|criar|registre|registrar|nova entrada|novo pedido|nova saida|nova saída|avaria|perda|gerar relatorio|gerar relatório|gerar pdf|emitir pdf)\b/.test(q);
+  return /\b(cadastrar|cadastre|adicionar|criar|registre|registrar|nova entrada|novo pedido|nova saida|nova saída|avaria|perda|relatorio|relatório|pdf)\b/.test(q);
 }
 function sanitizedScreenContext(req){
   const raw=req.body?.screenContext;
