@@ -33,7 +33,7 @@ services:
       - key: AION_WEB_SEARCH_ENABLED
         value: "true"
       - key: GEMINI_MODEL
-        value: gemini-2.5-flash
+        value: gemini-3.5-flash
       - key: GEMINI_API_KEY
         sync: false
       - key: BOOTSTRAP_ADMIN_USERNAME

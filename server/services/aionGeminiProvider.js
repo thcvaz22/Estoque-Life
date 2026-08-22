@@ -18,7 +18,7 @@ function status(){
     externalAI:enabled,
     webSearch:web,
     provider:enabled?'gemini':null,
-    model:enabled?(process.env.GEMINI_MODEL||'gemini-2.5-flash'):null,
+    model:enabled?(process.env.GEMINI_MODEL||'gemini-3.5-flash'):null,
     mode:enabled?(web?'conversacional + Gemini + Google Search':'conversacional + Gemini'):'conversacional local'
   };
 }
