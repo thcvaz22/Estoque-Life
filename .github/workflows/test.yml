@@ -28,8 +28,12 @@ jobs:
           node --check public/js/operational-logistics-v19.js
           node --check public/js/aion-context-v20.js
           node --check server/app.js
-      - name: Rodar testes
+      - name: Rodar suíte funcional
         env:
+          BOOTSTRAP_ADMIN_USERNAME: admin
+          BOOTSTRAP_ADMIN_PASSWORD: TestAdmin-v15-Only
+          BOOTSTRAP_OPERATOR_USERNAME: operador
+          BOOTSTRAP_OPERATOR_PASSWORD: TestOperator-v15-Only
           AION_EXTERNAL_AI_ENABLED: 'false'
           AION_WEB_SEARCH_ENABLED: 'false'
-        run: npm test
+        run: node --test --test-concurrency=1 server/test/*.test.js
